@@ -28,8 +28,10 @@ PAGINA = """
     --input: #1f1b2e;
     --borda: rgba(168, 130, 255, 0.16);
     --borda-forte: rgba(168, 130, 255, 0.34);
-    --roxo: #8b6cf6;
-    --roxo-brilho: #a488ff;
+    --kick-verde: #00ff38;
+    --kick-brilho: #66ff88;
+    --yt-vermelho: #ff0000;
+    --yt-brilho: #ff4d4d;
     --texto: #f5f3ff;
     --mutado: #a69ec2;
     --vivo: #ef4444;
@@ -49,7 +51,7 @@ PAGINA = """
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
     color: var(--texto);
     background:
-      radial-gradient(ellipse at 50% -8%, rgba(139, 108, 246, 0.28), transparent 55%),
+      radial-gradient(ellipse at 50% -8%, rgba(0, 255, 56, 0.15), transparent 55%),
       var(--bg);
     padding-bottom: 40px;
   }
@@ -85,21 +87,24 @@ PAGINA = """
   }
 
   .logo-box {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #a855f7, #6366f1);
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: #12101a;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 800;
-    font-size: 0.9rem;
-    color: #fff;
-    box-shadow: 0 6px 18px rgba(139, 108, 246, 0.35);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .logo-box svg {
+    width: 26px;
+    height: 26px;
   }
 
   .btn-topo {
-    background: var(--roxo);
+    background: var(--kick-verde);
     color: #0d0a16;
     font-weight: 700;
     font-size: 0.85rem;
@@ -172,8 +177,8 @@ PAGINA = """
   }
 
   input:focus, select:focus {
-    border-color: var(--roxo-brilho);
-    box-shadow: 0 0 0 3px rgba(139, 108, 246, 0.22);
+    border-color: var(--kick-brilho);
+    box-shadow: 0 0 0 3px rgba(0, 255, 56, 0.22);
   }
 
   select {
@@ -198,15 +203,15 @@ PAGINA = """
     font-weight: 700;
     border-radius: 12px;
     border: none;
-    background: var(--roxo);
+    background: var(--kick-verde);
     color: #0d0a16;
     cursor: pointer;
-    box-shadow: 0 10px 26px rgba(139, 108, 246, 0.35);
+    box-shadow: 0 10px 26px rgba(0, 255, 56, 0.35);
     transition: transform 0.15s ease, background 0.2s ease;
   }
 
   .btn-principal:hover {
-    background: var(--roxo-brilho);
+    background: var(--kick-brilho);
     transform: translateY(-1px);
   }
 
@@ -249,9 +254,9 @@ PAGINA = """
 
   #lista a:first-child {
     margin-top: 0;
-    background: rgba(139, 108, 246, 0.22);
-    border-color: var(--borda-forte);
-    color: var(--roxo-brilho);
+    background: rgba(255, 0, 0, 0.22);
+    border-color: rgba(255, 0, 0, 0.4);
+    color: var(--yt-brilho);
     font-weight: 700;
   }
 
@@ -291,7 +296,7 @@ PAGINA = """
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background:#ff5a4d;
+    background: var(--vivo);
     margin-right: 8px;
   }
   .player {
@@ -318,7 +323,7 @@ PAGINA = """
     font-weight: 700;
   }
   .btn-mini {
-    background: var(--roxo);
+    background: var(--kick-verde);
     color: #0d0a16;
     border: 0;
     border-radius: 10px;
@@ -345,7 +350,19 @@ PAGINA = """
   <header class="topbar">
     <div class="topbar-inner">
       <a class="brand" href="#">
-        <span class="logo-box">CL</span>
+        <span class="logo-box">
+          <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00ff38" />
+                <stop offset="100%" stop-color="#ff0000" />
+              </linearGradient>
+            </defs>
+            <rect x="12" y="25" width="46" height="50" rx="6" stroke="url(#logoGrad)" stroke-width="8"/>
+            <path d="M42 43L66 57L42 71V43Z" fill="url(#logoGrad)"/>
+            <path d="M78 25C84.6274 25 90 30.3726 90 37V63C90 69.6274 84.6274 75 78 75V75" stroke="#ff0000" stroke-width="8" stroke-linecap="round"/>
+          </svg>
+        </span>
         <span>Clipador de lives</span>
       </a>
       <a class="btn-topo" href="#url">Colar link</a>
