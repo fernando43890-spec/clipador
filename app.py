@@ -273,7 +273,6 @@ PAGINA = """
     line-height: 1.45;
   }
 
-  /* Classes adicionadas pelo usuário */
   .card-live {
     background: var(--surface);
     border: 1px solid var(--borda-forte);
@@ -292,7 +291,7 @@ PAGINA = """
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #ff5a4d;
+    background:#ff5a4d;
     margin-right: 8px;
   }
   .player {
@@ -307,6 +306,7 @@ PAGINA = """
     font-size: .76rem;
     color: var(--mutado);
   }
+
   .live-item {
     margin-top: 12px;
   }
@@ -375,7 +375,6 @@ PAGINA = """
       <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
     </section>
 
-    <!-- Seção de preview individual adicionada pelo usuário -->
     <section class="card-live" id="card-live" style="display:none">
       <div class="card-topo">
         <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
@@ -392,7 +391,6 @@ PAGINA = """
       <pre id="diag">-</pre>
     </div>
 
-    <!-- Seção de lives fixas adicionada pelo usuário -->
     <section class="caixa" id="lives-box">
       <span class="diag-topo">Lives agora</span>
       <div id="lives"></div>
@@ -404,14 +402,14 @@ PAGINA = """
 <script>
 let job = null;
 
-// Lógica de preview individual do input
 function plataforma(url) {
   try {
     const u = new URL(url);
     const host = u.hostname.replace('www.', '');
     const partes = u.pathname.split('/').filter(Boolean);
     if (host === 'kick.com' && partes[0]) {
-      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true&muted=true'};
+      // Removido muted=true para permitir som
+      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
     }
     if (host === 'twitch.tv' && partes[0]) {
       return {nome: 'Twitch', embed: 'https://player.twitch.tv/?channel=' + partes[0] + '&parent=' + location.hostname + '&muted=true'};
@@ -439,7 +437,6 @@ function mostrarPreview() {
 }
 document.getElementById('url').addEventListener('input', mostrarPreview);
 
-// Lógica das lives fixas (Canais e funções adicionadas pelo usuário)
 const CANAIS = [
   {nome: 'Coringa', plat: 'kick', canal: 'coringa'},
   {nome: 'Gabepeixe', plat: 'kick', canal: 'gabepeixe'}
@@ -449,7 +446,8 @@ function embedDe(c) {
   if (c.plat === 'twitch') {
     return 'https://player.twitch.tv/?channel=' + c.canal + '&parent=' + location.hostname + '&muted=true';
   }
-  return 'https://player.kick.com/' + c.canal + '?autoplay=true&muted=true';
+  // Removido muted=true para permitir som
+  return 'https://player.kick.com/' + c.canal + '?autoplay=true';
 }
 
 function linkDe(c) {
@@ -473,19 +471,18 @@ function montarLives() {
 }
 montarLives();
 
-// Funções de gravação e status (Mantidas intactas)
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
   const min = document.getElementById('min').value;
   const btn = document.getElementById('btn-gravar');
   if (!url) { return; }
   btn.disabled = true;
-  document.getElementById('status').innerText = 'A iniciar...';
+  document.getElementById('status').innerText = 'Iniciando...';
   try {
     const r = await fetch('/iniciar', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: url, min: min})
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url:url, min:min})
     });
     const d = await r.json();
     if (!d.id) {
@@ -522,7 +519,8 @@ async function checar() {
     document.getElementById('btn-gravar').disabled = false;
   }
 }
-</script></body>
+</script>
+</body>
 </html>
 """
 
@@ -554,30 +552,38 @@ def gravar(job_id, url, minutos):
     log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
 
     job["estado"] = "abrindo"
-    job["msg"] = "A abrir a live..."
-    job["diag"] = "A executar yt-dlp..."
+    job["msg"] = "Abrindo a live..."
+    job["diag"] = "Rodando yt-dlp..."
     cmd_url = ["yt-dlp", "-g", "-f", "best[height<=720]/best", url]
     try:
         r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
     except Exception as e:
         job["estado"] = "erro"
-        job["msg"] = "yt-dlp demorou demasiado ou falhou."
+        job["msg"] = "yt-dlp demorou demais ou falhou."
         job["diag"] = str(e)[-500:]
         return
     links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
     if not links:
         job["estado"] = "erro"
-        job["msg"] = "O yt-dlp não conseguiu obter o link da live."
+        job["msg"] = "O yt-dlp não conseguiu o link da live."
         job["diag"] = (r.stderr or "sem mensagem")[-700:]
         return
     stream = links[0]
-    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". A iniciar ffmpeg..."
+    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". Iniciando ffmpeg..."
 
     job["estado"] = "gravando"
-    job["msg"] = "A gravar... 0 clipes prontos"
+    job["msg"] = "Gravando... 0 clipes prontos"
+    
+    # Adicionado suporte a cookies para contornar restrições
+    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     cmd = [
         "ffmpeg", "-y",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    ]
+    if os.path.exists(cookies_path):
+        cmd.extend(["-cookies", cookies_path])
+        
+    cmd.extend([
         "-rw_timeout", "15000000",
         "-i", stream,
         "-t", str(int(minutos) * 60),
@@ -585,7 +591,7 @@ def gravar(job_id, url, minutos):
         "-f", "segment", "-segment_time", str(SEG),
         "-reset_timestamps", "1",
         padrao,
-    ]
+    ])
     logf = open(log_ffmpeg, "w")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
     inicio = time.time()
@@ -593,11 +599,9 @@ def gravar(job_id, url, minutos):
         feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
         job["clipes"] = max(0, len(feitos) - 1)
         tam = tamanho_pasta(pasta)
-        job["msg"] = "A gravar... " + str(job["clipes"]) + " clipes prontos"
-        job["diag"] = (
-            "Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
-            + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500)
-        )
+        job["msg"] = "Gravando... " + str(job["clipes"]) + " clipes prontos"
+        job["diag"] = ("Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
+                       + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500))
         if time.time() - inicio > 60 and tam == 0:
             proc.kill()
             break
@@ -621,13 +625,13 @@ def inicio():
 
 @app.route("/iniciar", methods=["POST"])
 def iniciar():
-    dados = request.get_json() or {}
+    dados = request.get_json()
     url = dados.get("url", "").strip()
     minutos = int(dados.get("min", 5))
     if not url.startswith("http"):
         return jsonify({"id": ""}), 400
     job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"estado": "iniciando", "msg": "A iniciar...", "clipes": 0, "diag": ""}
+    JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": ""}
     threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
     return jsonify({"id": job_id})
 
@@ -637,12 +641,7 @@ def status(job_id):
     j = JOBS.get(job_id)
     if not j:
         return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
-    return jsonify({
-        "estado": j["estado"],
-        "msg": j["msg"],
-        "clipes": j["clipes"],
-        "diag": j.get("diag", ""),
-    })
+    return jsonify({"estado": j["estado"], "msg": j["msg"], "clipes": j["clipes"], "diag": j.get("diag", "")})
 
 
 @app.route("/clipe/<job_id>/<int:n>")
