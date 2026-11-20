@@ -457,42 +457,55 @@ function linkDe(c) {
   return 'https://kick.com/' + c.canal;
 }
 
-function cliparCanal(canal) {
-  document.getElementById('url').value = 'https://kick.com/' + canal;
+function clipar(i) {
+  document.getElementById('url').value = linkDe(CANAIS[i]);
   mostrarPreview();
   window.scrollTo(0, 0);
 }
 
-async function estaAoVivo(canal) {
-  try {
-    const r = await fetch('https://kick.com/api/v2/channels/' + canal);
-    if (!r.ok) { return false; }
-    const d = await r.json();
-    return Boolean(d && d.livestream);
-  } catch (e) {
-    return false;
-  }
-}
-
-async function montarLives() {
-  const box = document.getElementById('lives');
-  const checks = await Promise.all(
-    CANAIS.map(async function (c) {
-      const vivo = await estaAoVivo(c.canal);
-      return vivo ? c : null;
-    })
-  );
-  const online = checks.filter(Boolean);
+function montarLives(lista) {
   let h = '';
-  online.forEach(function (c) {
+  lista.forEach(function (c) {
+    const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
     h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
-      '</span><button class="btn-mini" onclick="cliparCanal(\'' + c.canal + '\')">Usar esta live</button></div>' +
+      '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
       '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
   });
-  box.innerHTML = h;
+  document.getElementById('lives').innerHTML = h;
 }
-montarLives();
-setInterval(montarLives, 30000);
+montarLives(CANAIS);
+
+async function filtrarOnline() {
+  try {
+    const resultados = await Promise.all(
+      CANAIS.map(async function (c) {
+        try {
+          const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
+          if (!r.ok) { return {canal: c, status: 'incERTO'}; }
+          const d = await r.json();
+          if (d && 'livestream' in d) {
+            return {canal: c, status: d.livestream ? 'online' : 'offline'};
+          }
+          return {canal: c, status: 'incERTO'};
+        } catch (e) {
+          return {canal: c, status: 'incERTO'};
+        }
+      })
+    );
+    const confirmadosOnline = resultados
+      .filter(function (item) { return item.status === 'online'; })
+      .map(function (item) { return item.canal; });
+    const confirmadosOffline = resultados.filter(function (item) { return item.status === 'offline'; }).length;
+
+    if (confirmadosOnline.length > 0) {
+      montarLives(confirmadosOnline);
+    } else if (confirmadosOffline === CANAIS.length) {
+      montarLives([]);
+    }
+  } catch (e) {}
+}
+filtrarOnline();
+setInterval(filtrarOnline, 30000);
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
