@@ -1,4 +1,4 @@
-import json
+Import json
 import os
 import subprocess
 import threading
@@ -14,375 +14,697 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 SEG = 60
 
+
 PAGINA = """
 <!doctype html>
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clipador Minimalista</title>
+<title>Clipador de lives</title>
 <style>
   :root {
-    --bg: #09090b;
-    --surface: #18181b;
-    --surface-hover: #27272a;
-    --texto: #fafafa;
-    --mutado: #a1a1aa;
-    --accent: #22c55e;
-    --accent-glow: rgba(34, 197, 94, 0.2);
-    --borda: #27272a;
+    --bg: #07060b;
+    --surface: #12101a;
+    --surface-2: #191624;
+    --input: #1f1b2e;
+    --borda: rgba(168, 130, 255, 0.16);
+    --borda-forte: rgba(168, 130, 255, 0.34);
+    --kick-verde: #00ff38;
+    --kick-brilho: #66ff88;
+    --texto: #f5f3ff;
+    --mutado: #a69ec2;
+    --vivo: #ef4444;
   }
 
-  * { box-sizing: border-box; }
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     margin: 0;
     min-height: 100vh;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
     color: var(--texto);
-    background-color: var(--bg);
-    padding: 20px 10px;
+    background:
+      radial-gradient(ellipse at 50% -8%, rgba(0, 255, 56, 0.15), transparent 55%),
+      var(--bg);
+    padding-bottom: 40px;
   }
 
-  .wrap { max-width: 800px; margin: 0 auto; }
-  header { margin-bottom: 24px; text-align: center; }
-  h1 { font-size: 1.75rem; font-weight: 800; margin: 0 0 8px 0; letter-spacing: -0.02em; }
-  p.sub { color: var(--mutado); margin: 0; font-size: 0.95rem; }
-
-  .destaque-container {
-    background: var(--surface);
-    border: 1px solid var(--borda);
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 24px;
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    background: rgba(7, 6, 11, 0.85);
+    border-bottom: 1px solid var(--borda);
   }
 
-  .player-wrapper {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16/9;
+  .topbar-inner {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--texto);
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .logo-box {
+    width: 38px;
+    height: 38px;
     border-radius: 12px;
-    overflow: hidden;
-    background: #000;
-  }
-
-  .placeholder-img {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    object-fit: cover;
-    cursor: pointer;
-  }
-
-  .play-btn {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 64px; height: 64px;
-    background: var(--accent);
-    border-radius: 50%;
+    background: #12101a;
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    box-shadow: 0 0 20px var(--accent-glow);
-    transition: transform 0.1s;
-    border: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(0, 255, 56, 0.3);
   }
-  .play-btn:hover { transform: translate(-50%, -50%) scale(1.05); }
-  .play-btn svg { width: 32px; height: 32px; fill: #000; margin-left: 4px; }
 
-  iframe { width: 100%; height: 100%; border: none; }
+  .logo-box svg {
+    width: 26px;
+    height: 26px;
+  }
 
-  .controles {
+  .btn-topo {
+    background: var(--kick-verde);
+    color: #0d0a16;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 8px 14px;
+    border-radius: 999px;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  .wrap {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 18px 16px 0;
+  }
+
+  .hero-card {
+    background: var(--surface);
+    border: 1px solid var(--borda-forte);
+    border-radius: 20px;
+    padding: 20px 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  }
+
+  .hero-titulo {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .hero-sub {
+    margin: 8px 0 16px;
+    color: var(--mutado);
+    font-size: 0.92rem;
+    line-height: 1.48;
+  }
+
+  .hero-sub strong {
+    color: var(--texto);
+  }
+
+  .campo {
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--mutado);
+    margin-bottom: 6px;
+  }
+
+  input, select {
+    width: 100%;
+    padding: 14px;
+    font-size: 0.96rem;
+    border-radius: 12px;
+    border: 1px solid var(--borda);
+    background: var(--input);
+    color: var(--texto);
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  input::placeholder {
+    color: #8c84a8;
+  }
+
+  input:focus, select:focus {
+    border-color: var(--kick-brilho);
+    box-shadow: 0 0 0 3px rgba(0, 255, 56, 0.22);
+  }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--mutado) 50%),
+      linear-gradient(135deg, var(--mutado) 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) calc(50% - 2px),
+      calc(100% - 13px) calc(50% - 2px);
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 36px;
+  }
+
+  .btn-principal {
+    width: 100%;
+    padding: 15px 18px;
+    margin-top: 4px;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 12px;
+    border: none;
+    background: var(--kick-verde);
+    color: #0d0a16;
+    cursor: pointer;
+    box-shadow: 0 10px 26px rgba(0, 255, 56, 0.35);
+    transition: transform 0.15s ease, background 0.2s ease;
+  }
+
+  .btn-principal:hover {
+    background: var(--kick-brilho);
+    transform: translateY(-1px);
+  }
+
+  .btn-principal:active {
+    transform: translateY(0);
+  }
+
+  .btn-principal:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .caixa {
     background: var(--surface);
     border: 1px solid var(--borda);
     border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 24px;
-  }
-  .form-group { margin-bottom: 16px; }
-  label { display: block; font-size: 0.85rem; color: var(--mutado); margin-bottom: 8px; font-weight: 500; }
-  input, select {
-    width: 100%; padding: 12px 16px; font-size: 1rem;
-    border-radius: 8px; border: 1px solid var(--borda);
-    background: #09090b; color: var(--texto); outline: none;
-  }
-  input:focus, select:focus { border-color: var(--accent); }
-  button.principal {
-    width: 100%; padding: 14px; background: var(--accent);
-    color: #000; font-weight: 700; border-radius: 8px; border: none;
-    cursor: pointer; font-size: 1rem;
-  }
-  button.principal:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .grade-lives {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 16px;
-    margin-top: 16px;
+    padding: 14px 16px;
+    margin-top: 14px;
+    font-size: 0.92rem;
   }
 
-  .card-min {
-    background: var(--surface);
+  #status {
+    font-weight: 600;
+    color: var(--texto);
+  }
+
+  #lista a {
+    display: block;
+    color: var(--texto);
+    text-decoration: none;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface-2);
     border: 1px solid var(--borda);
-    border-radius: 12px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    margin-top: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
   }
-  .card-min .preview {
-    position: relative;
+
+  #lista a:first-child {
+    margin-top: 0;
+    background: rgba(0, 255, 56, 0.22);
+    border-color: var(--kick-brilho);
+    color: var(--kick-brilho);
+    font-weight: 700;
+  }
+
+  .diag-topo {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--mutado);
+    font-weight: 700;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78rem;
+    color: #c4b5fd;
+    margin: 8px 0 0;
+    line-height: 1.45;
+  }
+
+  .card-live {
+    background: var(--surface);
+    border: 1px solid var(--borda-forte);
+    border-radius: 20px;
+    padding: 14px;
+    margin-top: 14px;
+  }
+  .card-topo {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .ponto {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--vivo);
+    margin-right: 8px;
+  }
+  .player {
     width: 100%;
     aspect-ratio: 16/9;
-    border-radius: 8px;
-    overflow: hidden;
+    border: 0;
+    border-radius: 12px;
     background: #000;
   }
-  .card-min h3 { margin: 0; font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-min .play-btn { width: 40px; height: 40px; }
-  .card-min .play-btn svg { width: 20px; height: 20px; }
+  .player-aviso {
+    margin: 8px 0 0;
+    font-size: .76rem;
+    color: var(--mutado);
+  }
 
-  .status-box {
-    background: var(--surface); border: 1px solid var(--borda);
-    border-radius: 12px; padding: 16px; margin-bottom: 16px; font-size: 0.9rem;
+  .live-item {
+    margin-top: 12px;
   }
-  .lista-clipes { display: flex; flex-direction: column; gap: 8px; }
-  .lista-clipes a {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 16px; background: var(--surface-hover); border-radius: 8px;
-    color: var(--texto); text-decoration: none; font-weight: 500; font-size: 0.9rem;
-    border: 1px solid var(--borda);
+  .live-topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-weight: 700;
   }
-  .lista-clipes a:first-child { border-color: var(--accent); color: var(--accent); }
-  pre {
-    background: #09090b; padding: 12px; border-radius: 8px; font-size: 0.75rem;
-    color: var(--mutado); overflow-x: auto; margin-top: 8px; border: 1px solid var(--borda);
+  .btn-mini {
+    background: var(--kick-verde);
+    color: #0d0a16;
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-weight: 700;
+    font-size: .8rem;
+    cursor: pointer;
+    transition: filter 0.2s ease;
+  }
+  .btn-mini:hover {
+    filter: brightness(1.1);
+  }
+
+  .aviso {
+    color: #7c7496;
+    font-size: 0.78rem;
+    text-align: center;
+    margin: 18px 0 0;
+    line-height: 1.45;
   }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Clipador Minimalista</h1>
-    <p class="sub">Transmissões ao vivo cortadas sob demanda</p>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#">
+        <span class="logo-box">
+          <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 20H35L55 50L35 80H15L35 50L15 20Z" fill="#00ff38"/>
+            <path d="M45 20H65L85 50L65 80H45L65 50L45 20Z" fill="#00ff38" opacity="0.7"/>
+          </svg>
+        </span>
+        <span>Clipador de lives</span>
+      </a>
+      <a class="btn-topo" href="#url">Colar link</a>
+    </div>
   </header>
 
-  <div class="destaque-container">
-    <div id="player-destaque" class="player-wrapper">
-      <img id="capa-destaque" class="placeholder-img" src="" alt="Capa">
-      <button class="play-btn" onclick="carregarPlayerDestaque()">
-        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-      </button>
-    </div>
-  </div>
+  <main class="wrap">
+    <section class="hero-card">
+      <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
+      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
 
-  <div class="controles">
-    <div class="form-group">
-      <label for="url">URL da Live</label>
-      <input id="url" type="url" placeholder="https://kick.com/canal">
-    </div>
-    <div class="form-group">
-      <label for="min">Duração</label>
-      <select id="min">
-        <option value="5">5 minutos</option>
-        <option value="15">15 minutos</option>
-        <option value="30">30 minutos</option>
-      </select>
-    </div>
-    <button id="btn-iniciar" class="principal" onclick="iniciarGravacao()">Iniciar Corte</button>
-  </div>
+      <div class="campo">
+        <label for="url">Link da live</label>
+        <input id="url" type="url" placeholder="Cole o link da Kick...">
+      </div>
 
-  <div id="status-area" class="status-box" style="display:none;"></div>
-  <div id="lista-clipes" class="lista-clipes" style="margin-bottom: 24px;"></div>
+      <div class="campo">
+        <label for="min">Duração da captura</label>
+        <select id="min">
+          <option value="5">Gravar 5 minutos (teste)</option>
+          <option value="15">Gravar 15 minutos</option>
+          <option value="30">Gravar 30 minutos</option>
+          <option value="60">Gravar 60 minutos</option>
+        </select>
+      </div>
 
-  <div>
-    <h2 style="font-size: 1.2rem; margin-bottom: 8px;">Lives em Destaque</h2>
-    <div id="grade-canais" class="grade-lives"></div>
-  </div>
-</div>
+      <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
+    </section>
+
+    <section class="card-live" id="card-live" style="display:none">
+      <div class="card-topo">
+        <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
+        <span>AO VIVO</span>
+      </div>
+      <iframe id="player" class="player" allowfullscreen allow="autoplay; fullscreen"></iframe>
+      <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
+    </section>
+
+    <div class="caixa" id="status">Aguardando link.</div>
+    <div class="caixa" id="lista" style="display:none"></div>
+    <div class="caixa">
+      <span class="diag-topo">Diagnóstico</span>
+      <pre id="diag">-</pre>
+    </div>
+
+    <section class="caixa" id="lives-box">
+      <span class="diag-topo">Lives agora na Kick</span>
+      <div id="lives"></div>
+    </section>
+
+    <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
+  </main>
 
 <script>
-const CANAIS = [
-  {nome: 'Coringa', canal: 'coringa', capa: 'https://static-cdn.jtvnw.net/previews-ttv/live_user_coringa-1280x720.jpg'},
-  {nome: 'Gabe Peixe', canal: 'gabepeixe', capa: 'https://static-cdn.jtvnw.net/previews-ttv/live_user_gabepeixe-1280x720.jpg'},
-  {nome: 'Bak', canal: 'bak', capa: 'https://static-cdn.jtvnw.net/previews-ttv/live_user_bak-1280x720.jpg'},
-  {nome: 'Renato Vicente', canal: 'orenatovicente', capa: 'https://static-cdn.jtvnw.net/previews-ttv/live_user_orenatovicente-1280x720.jpg'}
-];
+let job = null;
+let ultimoClipesRenderizado = -1;
+let ultimoJobRenderizado = null;
 
-let jobAtivo = null;
-let ultimoQtdClipes = -1;
-
-function inicializarInterface() {
-  const principal = CANAIS[0];
-  document.getElementById('url').value = 'https://kick.com/' + principal.canal;
-  document.getElementById('capa-destaque').src = principal.capa;
-  
-  let gridHtml = '';
-  CANAIS.forEach((c, idx) => {
-    if(idx === 0) return;
-    gridHtml += `
-      <div class="card-min">
-        <div class="preview" id="preview-${idx}">
-          <img class="placeholder-img" src="${c.capa}" alt="${c.nome}">
-          <button class="play-btn" onclick="carregarMiniPlayer(${idx})">
-            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          </button>
-        </div>
-        <h3>${c.nome}</h3>
-      </div>
-    `;
-  });
-  document.getElementById('grade-canais').innerHTML = gridHtml;
-}
-
-function carregarPlayerDestaque() {
-  const urlInput = document.getElementById('url').value;
-  const canal = extrairCanalKick(urlInput) || CANAIS[0].canal;
-  const wrapper = document.getElementById('player-destaque');
-  wrapper.innerHTML = `<iframe src="https://player.kick.com/${canal}?autoplay=true" allowfullscreen allow="autoplay"></iframe>`;
-}
-
-function carregarMiniPlayer(idx) {
-  const c = CANAIS[idx];
-  document.getElementById('url').value = 'https://kick.com/' + c.canal;
-  const container = document.getElementById(`preview-${idx}`);
-  container.innerHTML = `<iframe src="https://player.kick.com/${c.canal}?autoplay=true" allowfullscreen allow="autoplay"></iframe>`;
-}
-
-function extrairCanalKick(url) {
+function plataforma(url) {
   try {
     const u = new URL(url);
+    const host = u.hostname.replace('www.', '');
     const partes = u.pathname.split('/').filter(Boolean);
-    return partes[0] || null;
-  } catch(e) { return null; }
+    if ((host === 'kick.com' || host === 'kzl.ink') && partes[0]) {
+      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
+    }
+  } catch (e) {}
+  return null;
 }
 
-async function iniciarGravacao() {
+let ultimoEmbed = '';
+function mostrarPreview() {
+  const p = plataforma(document.getElementById('url').value.trim());
+  const card = document.getElementById('card-live');
+  if (!p) {
+    card.style.display = 'none';
+    document.getElementById('player').src = 'about:blank';
+    ultimoEmbed = '';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('plat-nome').innerText = p.nome;
+  if (p.embed !== ultimoEmbed) {
+    document.getElementById('player').src = p.embed;
+    ultimoEmbed = p.embed;
+  }
+}
+document.getElementById('url').addEventListener('input', mostrarPreview);
+
+const CANAIS = [
+  {nome: 'Bak', plat: 'kick', canal: 'bak'},
+  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'},
+  {nome: 'Brabox', plat: 'kick', canal: 'brabox'},
+  {nome: 'Gabe Peixe', plat: 'kick', canal: 'gabepeixe'},
+  {nome: 'Coringa', plat: 'kick', canal: 'coringa'}
+];
+
+function embedDe(c) {
+  return 'https://player.kick.com/' + c.canal + '?autoplay=true';
+}
+
+function linkDe(c) {
+  return 'https://kick.com/' + c.canal;
+}
+
+function clipar(i) {
+  document.getElementById('url').value = linkDe(CANAIS[i]);
+  mostrarPreview();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function montarLives(lista) {
+  let h = '';
+  lista.forEach(function (c) {
+    const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
+    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+      '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
+      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
+  });
+  document.getElementById('lives').innerHTML = h;
+}
+montarLives(CANAIS);
+
+async function filtrarOnline() {
+  try {
+    const resultados = await Promise.all(
+      CANAIS.map(async function (c) {
+        try {
+          const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
+          if (!r.ok) { return {canal: c, status: 'incerto'}; }
+          const d = await r.json();
+          if (d && 'livestream' in d) {
+            return {canal: c, status: d.livestream ? 'online' : 'offline'};
+          }
+          return {canal: c, status: 'incerto'};
+        } catch (e) {
+          return {canal: c, status: 'incerto'};
+        }
+      })
+    );
+    const confirmadosOnline = resultados
+      .filter(function (item) { return item.status === 'online'; })
+      .map(function (item) { return item.canal; });
+    const confirmadosOffline = resultados.filter(function (item) { return item.status === 'offline'; }).length;
+
+    if (confirmadosOnline.length > 0) {
+      montarLives(confirmadosOnline);
+    } else if (confirmadosOffline === CANAIS.length) {
+      montarLives([]);
+    }
+  } catch (e) {}
+}
+filtrarOnline();
+setInterval(filtrarOnline, 30000);
+
+async function iniciar() {
   const url = document.getElementById('url').value.trim();
   const min = document.getElementById('min').value;
-  const btn = document.getElementById('btn-iniciar');
-  const statusArea = document.getElementById('status-area');
-  
-  if(!url) return;
+  const btn = document.getElementById('btn-gravar');
+  if (!url) { return; }
   btn.disabled = true;
-  statusArea.style.display = 'block';
-  statusArea.innerHTML = 'Inicializando...');
-  ultimoQtdClipes = -1;
-  document.getElementById('lista-clipes').innerHTML = '';
-
+  ultimoClipesRenderizado = -1;
+  document.getElementById('lista').style.display = 'none';
+  document.getElementById('lista').innerHTML = '';
+  document.getElementById('status').innerText = 'Iniciando...';
   try {
-    const res = await fetch('/iniciar', {
+    const r = await fetch('/iniciar', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url, min})
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url: url, min: min})
     });
-    const data = await res.json();
-    if(!res.ok || !data.id) {
-      statusArea.innerHTML = `Erro: ${data.erro || 'Falha ao iniciar'}`;
+    const d = await r.json();
+    if (!r.ok || !d.id) {
+      document.getElementById('status').innerText = d.erro || 'Link inválido.';
       btn.disabled = false;
       return;
     }
-    jobAtivo = data.id;
-    verificarStatus();
-  } catch(e) {
-    statusArea.innerHTML = 'Erro de conexão com o servidor.';
+    job = d.id;
+    ultimoJobRenderizado = job;
+    checar();
+  } catch (e) {
+    document.getElementById('status').innerText = 'Erro ao iniciar.';
     btn.disabled = false;
   }
 }
 
-async function verificarStatus() {
-  if(!jobAtivo) return;
+function atualizarListaClipes(clipesQtd, jobId) {
+  const lista = document.getElementById('lista');
+  if (clipesQtd <= 0) {
+    lista.style.display = 'none';
+    return;
+  }
+  if (clipesQtd === ultimoClipesRenderizado && jobId === ultimoJobRenderizado) {
+    return;
+  }
+  ultimoClipesRenderizado = clipesQtd;
+  ultimoJobRenderizado = jobId;
+  lista.style.display = 'block';
+  let h = '<a href="/zip/' + jobId + '">Baixar todos em ZIP (' + clipesQtd + ' clipes)</a>';
+  for (let i = 1; i <= clipesQtd; i++) {
+    h += '<a href="/clipe/' + jobId + '/' + i + '">Clipe ' + i + '</a>';
+  }
+  lista.innerHTML = h;
+}
+
+async function checar() {
+  if (!job) { return; }
   try {
-    const res = await fetch('/status/' + jobAtivo);
-    const d = await res.json();
-    const statusArea = document.getElementById('status-area');
-    
-    statusArea.innerHTML = `
-      <div><strong>Estado:</strong> ${d.msg}</div>
-      <pre>${d.diag || 'Sem diagnóstico.'}</pre>
-    `;
-    
-    renderizarListaClipes(Number(d.clipes || 0));
+    const r = await fetch('/status/' + job);
+    const d = await r.json();
+    document.getElementById('status').innerText = d.msg || '';
+    document.getElementById('diag').innerText = d.diag || '-';
+    atualizarListaClipes(Number(d.clipes || 0), job);
 
-    if(d.estado !== 'fim' && d.estado !== 'erro') {
-      setTimeout(verificarStatus, 3000);
+    if (d.estado !== 'fim' && d.estado !== 'erro') {
+      setTimeout(checar, 3000);
     } else {
-      document.getElementById('btn-iniciar').disabled = false;
+      document.getElementById('btn-gravar').disabled = false;
     }
-  } catch(e) {
-    setTimeout(verificarStatus, 3000);
+  } catch (e) {
+    setTimeout(checar, 3000);
   }
 }
-
-function renderizarListaClipes(qtd) {
-  if(qtd <= 0 || qtd === ultimoQtdClipes) return;
-  ultimoQtdClipes = qtd;
-  const container = document.getElementById('lista-clipes');
-  let html = `<a href="/zip/${jobAtivo}" style="background: var(--surface); border-color: var(--accent); color: var(--accent);">Baixar Pacote Completo (${qtd} clipes) ⬇️</a>`;
-  for(let i = 1; i <= qtd; i++) {
-    html += `<a href="/clipe/${jobAtivo}/${i}">Clipe ${i} <span>▶️</span></a>`;
-  }
-  container.innerHTML = html;
-}
-
-document.addEventListener('DOMContentLoaded', inicializarInterface);
 </script>
 </body>
 </html>
 """
 
-def ler_fim(caminho, limite=500):
+
+def ler_fim(caminho, limite=700):
     try:
-        if not os.path.exists(caminho): return ""
+        if not os.path.exists(caminho):
+            return ""
         with open(caminho, "r", errors="ignore") as f:
-            texto = f.read().replace("\r", "\n")
+            texto = f.read()
+        texto = texto.replace("\r", "\n")
         return texto[-limite:]
-    except: return ""
+    except Exception:
+        return ""
+
 
 def listar_clipes(pasta):
-    if not os.path.isdir(pasta): return []
-    return sorted([f for f in os.listdir(pasta) if f.startswith("clipe_") and f.endswith(".mp4") and os.path.getsize(os.path.join(pasta, f)) > 0])
+    if not os.path.isdir(pasta):
+        return []
+    arquivos = []
+    for f in sorted(os.listdir(pasta)):
+        if f.startswith("clipe_") and f.endswith(".mp4"):
+            caminho = os.path.join(pasta, f)
+            if os.path.isfile(caminho) and os.path.getsize(caminho) > 0:
+                arquivos.append(f)
+    return arquivos
+
 
 def tamanho_pasta(pasta):
     return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta))
 
+
 def atualizar_job(job_id, **campos):
     with JOBS_LOCK:
-        if job_id in JOBS: JOBS[job_id].update(campos)
+        if job_id in JOBS:
+            JOBS[job_id].update(campos)
+
 
 def extrair_stream(url):
     cmd_json = ["yt-dlp", "--no-warnings", "-j", "-f", "best[height<=720]/best", url]
-    r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=60)
+    r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
     if r.returncode == 0 and r.stdout.strip():
         for linha in r.stdout.strip().splitlines():
             try:
                 info = json.loads(linha)
                 stream_url = info.get("url")
-                if stream_url: return stream_url, info.get("http_headers") or {}, ""
-            except: continue
-    return None, {}, (r.stderr or "Falha ao extrair stream").strip()
+                if stream_url:
+                    headers = info.get("http_headers") or {}
+                    return stream_url, headers, ""
+            except json.JSONDecodeError:
+                continue
+
+    cmd_url = ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url]
+    r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
+    links = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip().startswith("http")]
+    if links:
+        return links[0], {}, ""
+
+    erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
+    return None, {}, erro_msg[-700:]
+
 
 def gravar(job_id, url, minutos):
     pasta = os.path.join(BASE, job_id)
     os.makedirs(pasta, exist_ok=True)
     atualizar_job(job_id, pasta=pasta)
-    log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
+
     padrao = os.path.join(pasta, "clipe_%03d.mp4")
+    log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
 
-    atualizar_job(job_id, estado="abrindo", msg="Resolvendo link...", diag="Executando yt-dlp...")
-    stream, headers, erro = extrair_stream(url)
+    atualizar_job(
+        job_id,
+        estado="abrindo",
+        msg="Abrindo a live...",
+        diag="Rodando yt-dlp...",
+    )
 
-    if not stream:
-        atualizar_job(job_id, estado="erro", msg="Erro ao obter link da live.", diag=erro)
+    try:
+        stream, headers, erro_yt = extrair_stream(url)
+    except subprocess.TimeoutExpired:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="O yt-dlp demorou demais para responder.",
+            diag="Timeout ao buscar o stream da live.",
+        )
+        return
+    except Exception as e:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="Falha ao executar o yt-dlp.",
+            diag=str(e)[-500:],
+        )
         return
 
-    user_agent = headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    extra_headers = [item for kv in [["-headers", f"{k}: {v}"] for k, v in headers.items() if k.lower() != "user-agent" and v] for item in kv]
+    if not stream:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="O yt-dlp não conseguiu o link da live.",
+            diag=erro_yt or "sem mensagem",
+        )
+        return
 
-    atualizar_job(job_id, estado="gravando", msg="Gravando Kick...", diag="Iniciando FFmpeg...")
+    user_agent = headers.get(
+        "User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    )
+
+    extra_headers = []
+    for chave, valor in headers.items():
+        if chave.lower() != "user-agent" and valor:
+            extra_headers.extend(["-headers", f"{chave}: {valor}"])
+
+    atualizar_job(
+        job_id,
+        estado="gravando",
+        msg="Gravando... 0 clipes prontos",
+        diag="yt-dlp OK. Iniciando ffmpeg...",
+    )
 
     cmd = [
-        "ffmpeg", "-y", "-hide_banner",
+        "ffmpeg", "-y",
         "-user_agent", user_agent,
         *extra_headers,
         "-rw_timeout", "15000000",
@@ -392,7 +714,7 @@ def gravar(job_id, url, minutos):
         "-f", "segment",
         "-segment_time", str(SEG),
         "-reset_timestamps", "1",
-        padrao
+        padrao,
     ]
 
     proc = None
@@ -403,89 +725,140 @@ def gravar(job_id, url, minutos):
 
             while proc.poll() is None:
                 feitos = listar_clipes(pasta)
+                # O último arquivo ainda está sendo gravado; só o anterior está fechado
                 clipes_prontos = max(0, len(feitos) - 1)
                 tam = tamanho_pasta(pasta)
-                
+
                 atualizar_job(
-                    job_id, clipes=clipes_prontos,
-                    msg=f"Gravando ({clipes_prontos} clipes fechados)...",
-                    diag=f"Tempo: {int(time.time() - inicio)}s | Espaço: {tam // 1024} KB\nLast Log:\n{ler_fim(log_ffmpeg)}"
+                    job_id,
+                    clipes=clipes_prontos,
+                    msg=f"Gravando... {clipes_prontos} clipes prontos",
+                    diag=(
+                        f"Tempo: {int(time.time() - inicio)}s | Gravado: {tam // 1024} KB\n"
+                        + ler_fim(log_ffmpeg, 500)
+                    ),
                 )
 
                 if time.time() - inicio > 60 and tam == 0:
+                    proc.kill()
+                    proc.wait()
                     break
+
                 time.sleep(3)
-
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-
     except Exception as e:
         if proc and proc.poll() is None:
             proc.kill()
-        atualizar_job(job_id, estado="erro", msg="Falha crítica no FFmpeg.", diag=str(e))
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="Erro durante a gravação com ffmpeg.",
+            diag=str(e)[-500:],
+        )
         return
 
     feitos_finais = listar_clipes(pasta)
+    tam_final = tamanho_pasta(pasta)
     clipes_finais = len(feitos_finais)
-    if clipes_finais > 0:
-        atualizar_job(job_id, estado="fim", clipes=clipes_finais, msg="Processamento concluído com sucesso!", diag="Todos os segmentos foram salvos.")
+
+    if clipes_finais > 0 and tam_final > 0:
+        atualizar_job(
+            job_id,
+            estado="fim",
+            clipes=clipes_finais,
+            msg=f"Pronto! {clipes_finais} clipes gerados.",
+            diag=f"Total gravado: {tam_final // 1024} KB\n" + ler_fim(log_ffmpeg, 400),
+        )
     else:
-        atualizar_job(job_id, estado="erro", msg="Nenhum clipe válido foi gerado.", diag=ler_fim(log_ffmpeg, 1000))
+        atualizar_job(
+            job_id,
+            estado="erro",
+            clipes=0,
+            msg="Nenhum dado chegou em 60 segundos ou a live não está ativa.",
+            diag=ler_fim(log_ffmpeg, 800) or "Sem saída do ffmpeg.",
+        )
+
 
 @app.route("/")
-def inicio(): return render_template_string(PAGINA)
+def inicio():
+    return render_template_string(PAGINA)
+
 
 @app.route("/iniciar", methods=["POST"])
 def iniciar():
     dados = request.get_json(silent=True) or {}
     url = str(dados.get("url", "")).strip()
     if not (url.startswith("http://") or url.startswith("https://")):
-        return jsonify({"id": "", "erro": "URL inválida."}), 400
+        return jsonify({"id": "", "erro": "Link inválido."}), 400
+
     try:
-        minutos = min(max(int(dados.get("min", 5)), 1), 180)
-    except: minutos = 5
+        minutos = int(dados.get("min", 5))
+    except (TypeError, ValueError):
+        minutos = 5
+    minutos = max(1, min(minutos, 180))
 
     job_id = uuid.uuid4().hex[:8]
     with JOBS_LOCK:
-        JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": "", "pasta": ""}
+        JOBS[job_id] = {
+            "estado": "iniciando",
+            "msg": "Iniciando...",
+            "clipes": 0,
+            "diag": "",
+            "pasta": "",
+        }
 
     threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
     return jsonify({"id": job_id})
+
 
 @app.route("/status/<job_id>")
 def status(job_id):
     with JOBS_LOCK:
         j = JOBS.get(job_id)
-        if not j: return jsonify({"estado": "erro", "msg": "Job não encontrado", "clipes": 0, "diag": ""})
-        return jsonify({"estado": j["estado"], "msg": j["msg"], "clipes": j["clipes"], "diag": j.get("diag", "")})
+        if not j:
+            return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
+        return jsonify({
+            "estado": j["estado"],
+            "msg": j["msg"],
+            "clipes": j["clipes"],
+            "diag": j.get("diag", ""),
+        })
+
 
 @app.route("/clipe/<job_id>/<int:n>")
 def clipe(job_id, n):
-    if n < 1: return "Inválido", 400
+    if n < 1:
+        return "Clipe inválido", 400
     with JOBS_LOCK:
         j = JOBS.get(job_id)
         pasta = j.get("pasta") if j else ""
-    if not pasta: return "Não encontrado", 404
+    if not pasta:
+        return "Não encontrado", 404
+
     arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
-    if not os.path.isfile(arq): return "Não encontrado", 404
+    if not os.path.isfile(arq):
+        return "Não encontrado", 404
     return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
+
 
 @app.route("/zip/<job_id>")
 def baixar_zip(job_id):
     with JOBS_LOCK:
         j = JOBS.get(job_id)
         pasta = j.get("pasta") if j else ""
-    if not pasta: return "Não encontrado", 404
+    if not pasta:
+        return "Não encontrado", 404
+
     arquivos = listar_clipes(pasta)
-    if not arquivos: return "Vazio", 404
+    if not arquivos:
+        return "Nenhum clipe disponível", 404
+
     caminho_zip = os.path.join(BASE, f"{job_id}.zip")
     with zipfile.ZipFile(caminho_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for f in arquivos: z.write(os.path.join(pasta, f), f)
+        for f in arquivos:
+            z.write(os.path.join(pasta, f), f)
+
     return send_file(caminho_zip, as_attachment=True, download_name="clipes.zip")
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
