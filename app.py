@@ -5,25 +5,12 @@ import time
 import uuid
 import zipfile
 from flask import Flask, request, send_file, render_template_string, jsonify
-import requests
 
 app = Flask(__name__)
 BASE = "/tmp/clipador" if os.path.exists("/tmp") else "."
 os.makedirs(BASE, exist_ok=True)
 JOBS = {}
-
-
-def checar_kick_online(canal):
-    try:
-        url = f"https://kick.com/api/v2/channels/{canal}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        r = requests.get(url, headers=headers, timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            return data.get("livestream") is not None
-    except Exception:
-        pass
-    return False
+SEG = 60
 
 
 PAGINA = """
@@ -375,7 +362,7 @@ PAGINA = """
 
   <main class="wrap">
     <section class="hero-card">
-      <h1 class="hero-titulo">Transforme lives ao vivo em cortes rápidos</h1>
+      <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
       <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
 
       <div class="campo">
@@ -386,8 +373,10 @@ PAGINA = """
       <div class="campo">
         <label for="min">Duração da captura</label>
         <select id="min">
-          <option value="0.5">Gravar blocos de 30 segundos</option>
-          <option value="1">Gravar blocos de 1 minuto</option>
+          <option value="5">Gravar 5 minutos (teste)</option>
+          <option value="15">Gravar 15 minutos</option>
+          <option value="30">Gravar 30 minutos</option>
+          <option value="60">Gravar 60 minutos</option>
         </select>
       </div>
 
@@ -412,7 +401,7 @@ PAGINA = """
 
     <section class="caixa" id="lives-box">
       <span class="diag-topo">Lives agora na Kick</span>
-      <div id="lives"><div style="color:var(--mutado); text-align:center; padding:15px;">Carregando lives...</div></div>
+      <div id="lives"></div>
     </section>
 
     <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
@@ -452,34 +441,71 @@ function mostrarPreview() {
 }
 document.getElementById('url').addEventListener('input', mostrarPreview);
 
-async function carregarLives() {
-  try {
-    const r = await fetch('/api/lives');
-    const canais = await r.json();
-    let h = '';
-    if (canais.length === 0) {
-      h = '<div style="color:var(--mutado); text-align:center; padding:15px;">Nenhum streamer online no momento.</div>';
-    } else {
-      canais.forEach(function (c, i) {
-        h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
-          '</span><button class="btn-mini" onclick="clipar(\'' + c.canal + '\')">Usar esta live</button></div>' +
-          '<iframe class="player" src="https://player.kick.com/' + c.canal + '?autoplay=true" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
-      });
-    }
-    document.getElementById('lives').innerHTML = h;
-  } catch (e) {
-    document.getElementById('lives').innerHTML = '<div style="color:var(--vivo); text-align:center; padding:15px;">Erro ao carregar lives.</div>';
-  }
+const CANAIS = [
+  {nome: 'Bak', plat: 'kick', canal: 'bak'},
+  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'},
+  {nome: 'Brabox', plat: 'kick', canal: 'brabox'},
+  {nome: 'Gabe Peixe', plat: 'kick', canal: 'gabepeixe'},
+  {nome: 'Coringa', plat: 'kick', canal: 'coringa'}
+];
+
+function embedDe(c) {
+  return 'https://player.kick.com/' + c.canal + '?autoplay=true';
 }
 
-function clipar(canal) {
-  document.getElementById('url').value = 'https://kick.com/' + canal;
+function linkDe(c) {
+  return 'https://kick.com/' + c.canal;
+}
+
+function clipar(i) {
+  document.getElementById('url').value = linkDe(CANAIS[i]);
   mostrarPreview();
   window.scrollTo(0, 0);
 }
 
-carregarLives();
-setInterval(carregarLives, 30000);
+function montarLives(lista) {
+  let h = '';
+  lista.forEach(function (c) {
+    const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
+    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+      '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
+      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
+  });
+  document.getElementById('lives').innerHTML = h;
+}
+montarLives(CANAIS);
+
+async function filtrarOnline() {
+  try {
+    const resultados = await Promise.all(
+      CANAIS.map(async function (c) {
+        try {
+          const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
+          if (!r.ok) { return {canal: c, status: 'incERTO'}; }
+          const d = await r.json();
+          if (d && 'livestream' in d) {
+            return {canal: c, status: d.livestream ? 'online' : 'offline'};
+          }
+          return {canal: c, status: 'incERTO'};
+        } catch (e) {
+          return {canal: c, status: 'incERTO'};
+        }
+      })
+    );
+    const confirmadosOnline = resultados
+      .filter(function (item) { return item.status === 'online'; })
+      .map(function (item) { return item.canal; });
+    const confirmadosOffline = resultados.filter(function (item) { return item.status === 'offline'; }).length;
+
+    if (confirmadosOnline.length > 0) {
+      montarLives(confirmadosOnline);
+    } else if (confirmadosOffline === CANAIS.length) {
+      montarLives([]);
+    }
+  } catch (e) {}
+}
+filtrarOnline();
+setInterval(filtrarOnline, 30000);
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -553,7 +579,7 @@ def tamanho_pasta(pasta):
     return total
 
 
-def gravar(job_id, url, duracao_minutos):
+def gravar(job_id, url, minutos):
     job = JOBS[job_id]
     pasta = os.path.join(BASE, job_id)
     os.makedirs(pasta, exist_ok=True)
@@ -585,18 +611,14 @@ def gravar(job_id, url, duracao_minutos):
 
     job["estado"] = "gravando"
     job["msg"] = "Gravando... 0 clipes prontos"
-    
-    tempo_segundos = max(15, int(float(duracao_minutos) * 60))
-    seg_time = "30" if duracao_minutos == "0.5" else "60"
-
     cmd = [
         "ffmpeg", "-y",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
         "-rw_timeout", "15000000",
         "-i", stream,
-        "-t", str(tempo_segundos),
+        "-t", str(int(minutos) * 60),
         "-c", "copy",
-        "-f", "segment", "-segment_time", seg_time,
+        "-f", "segment", "-segment_time", str(SEG),
         "-reset_timestamps", "1",
         padrao,
     ]
@@ -631,24 +653,11 @@ def inicio():
     return render_template_string(PAGINA)
 
 
-@app.route("/api/lives")
-def api_lives():
-    canais = [
-        {'nome': 'Bak', 'canal': 'bak'},
-        {'nome': 'Renato Vicente', 'canal': 'orenatovicente'},
-        {'nome': 'Coringa', 'canal': 'coringa'},
-        {'nome': 'Gabi Peixe', 'canal': 'gabipeixe'},
-        {'nome': 'Brabox', 'canal': 'brabox'}
-    ]
-    online = [c for c in canais if checar_kick_online(c['canal'])]
-    return jsonify(online)
-
-
 @app.route("/iniciar", methods=["POST"])
 def iniciar():
     dados = request.get_json()
     url = dados.get("url", "").strip()
-    minutos = str(dados.get("min", "1"))
+    minutos = int(dados.get("min", 5))
     if not url.startswith("http"):
         return jsonify({"id": ""}), 400
     job_id = uuid.uuid4().hex[:8]
@@ -672,7 +681,7 @@ def clipe(job_id, n):
         return "Não encontrado", 404
     arq = os.path.join(j["pasta"], "clipe_%03d.mp4" % (n - 1))
     if not os.path.exists(arq):
-        return "Not found", 404
+        return "Não encontrado", 404
     return send_file(arq, as_attachment=True, download_name="clipe_%d.mp4" % n)
 
 
