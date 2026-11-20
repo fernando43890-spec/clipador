@@ -19,6 +19,7 @@ TIKTOK = [
     {"nome": "Isaffonti", "usuario": "isaffonti"},
     {"nome": "Fluxo Rajah", "usuario": "fluxo_rajah"},
     {"nome": "Uriel", "usuario": "uriel.wq"},
+    {"nome": "Levelup", "usuario": "levelup_007"},
 ]
 TT_CACHE = {"hora": 0, "dados": []}
 TT_LOCK = threading.Lock()
