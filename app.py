@@ -443,7 +443,10 @@ document.getElementById('url').addEventListener('input', mostrarPreview);
 
 const CANAIS = [
   {nome: 'Bak', plat: 'kick', canal: 'bak'},
-  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'}
+  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'},
+  {nome: 'Brabox', plat: 'kick', canal: 'brabox'},
+  {nome: 'Gabe Peixe', plat: 'kick', canal: 'gabepeixe'},
+  {nome: 'Coringa', plat: 'kick', canal: 'coringa'}
 ];
 
 function embedDe(c) {
@@ -454,22 +457,42 @@ function linkDe(c) {
   return 'https://kick.com/' + c.canal;
 }
 
-function clipar(i) {
-  document.getElementById('url').value = linkDe(CANAIS[i]);
+function cliparCanal(canal) {
+  document.getElementById('url').value = 'https://kick.com/' + canal;
   mostrarPreview();
   window.scrollTo(0, 0);
 }
 
-function montarLives() {
+async function estaAoVivo(canal) {
+  try {
+    const r = await fetch('https://kick.com/api/v2/channels/' + canal);
+    if (!r.ok) { return false; }
+    const d = await r.json();
+    return Boolean(d && d.livestream);
+  } catch (e) {
+    return false;
+  }
+}
+
+async function montarLives() {
+  const box = document.getElementById('lives');
+  const checks = await Promise.all(
+    CANAIS.map(async function (c) {
+      const vivo = await estaAoVivo(c.canal);
+      return vivo ? c : null;
+    })
+  );
+  const online = checks.filter(Boolean);
   let h = '';
-  CANAIS.forEach(function (c, i) {
+  online.forEach(function (c) {
     h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
-      '</span><button class="btn-mini" onclick="clipar(' + i + ')">Usar esta live</button></div>' +
+      '</span><button class="btn-mini" onclick="cliparCanal(\'' + c.canal + '\')">Usar esta live</button></div>' +
       '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
   });
-  document.getElementById('lives').innerHTML = h;
+  box.innerHTML = h;
 }
 montarLives();
+setInterval(montarLives, 30000);
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
