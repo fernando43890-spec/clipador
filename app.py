@@ -855,11 +855,33 @@ def checar_tiktok(usuario):
     return None, erro[-200:] or "sem mensagem do yt-dlp"
 
 
+TT_ARQ = os.path.join(BASE, "tiktok_cache.json")
+TT_MARCA = TT_ARQ + ".rodando"
+
+
+def tt_ler():
+    try:
+        with open(TT_ARQ, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"hora": 0, "dados": []}
+
+
+def tt_gravar(hora, dados):
+    tmp = TT_ARQ + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"hora": hora, "dados": dados}, f)
+    os.replace(tmp, TT_ARQ)
+
+
 def atualizar_tiktok():
     resultados = [(None, "")] * len(TIKTOK)
 
     def worker(i, usuario):
-        resultados[i] = checar_tiktok(usuario)
+        try:
+            resultados[i] = checar_tiktok(usuario)
+        except Exception as e:
+            resultados[i] = (None, str(e)[-200:])
 
     try:
         threads = [
@@ -879,12 +901,14 @@ def atualizar_tiktok():
             }
             for i, c in enumerate(TIKTOK)
         ]
-        with TT_LOCK:
-            TT_CACHE["dados"] = dados
-            TT_CACHE["hora"] = time.time()
+        tt_gravar(time.time(), dados)
     finally:
         with TT_LOCK:
             TT_CACHE["rodando"] = False
+        try:
+            os.remove(TT_MARCA)
+        except OSError:
+            pass
 
 
 def gravar(job_id, url, minutos):
@@ -1058,16 +1082,54 @@ def iniciar():
 
 @app.route("/api/tiktok")
 def api_tiktok():
+    cache = tt_ler()
     iniciar_thread = False
-    with TT_LOCK:
-        velho = time.time() - TT_CACHE["hora"] >= TT_TTL
-        if velho and not TT_CACHE["rodando"]:
-            TT_CACHE["rodando"] = True
-            iniciar_thread = True
-        dados = list(TT_CACHE["dados"])
+    if time.time() - cache.get("hora", 0) >= TT_TTL:
+        with TT_LOCK:
+            ativo = (
+                os.path.exists(TT_MARCA)
+                and time.time() - os.path.getmtime(TT_MARCA) < 60
+            )
+            if not ativo and not TT_CACHE["rodando"]:
+                try:
+                    open(TT_MARCA, "w").close()
+                except OSError:
+                    pass
+                TT_CACHE["rodando"] = True
+                iniciar_thread = True
     if iniciar_thread:
         threading.Thread(target=atualizar_tiktok, daemon=True).start()
+    dados = cache.get("dados", [])
     return jsonify({"pronto": bool(dados), "dados": dados})
+
+
+@app.route("/api/tiktok/teste")
+def api_tiktok_teste():
+    info = {"pid_worker": os.getpid()}
+    try:
+        v = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, timeout=10)
+        info["yt_dlp_versao"] = (v.stdout or v.stderr).strip()
+    except FileNotFoundError:
+        info["yt_dlp_versao"] = "NAO INSTALADO"
+    except Exception as e:
+        info["yt_dlp_versao"] = "erro: " + str(e)[-150:]
+
+    usuario = request.args.get("u", TIKTOK[0]["usuario"])
+    info["usuario"] = usuario
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best",
+             f"https://www.tiktok.com/@{usuario}/live"],
+            capture_output=True, text=True, timeout=20,
+        )
+        info["codigo"] = r.returncode
+        info["saida"] = r.stdout[-200:]
+        info["erro"] = r.stderr[-600:]
+    except subprocess.TimeoutExpired:
+        info["erro"] = "timeout: o yt-dlp não respondeu em 20 segundos"
+    except Exception as e:
+        info["erro"] = str(e)[-300:]
+    return jsonify(info)
 
 
 @app.route("/status/<job_id>")
