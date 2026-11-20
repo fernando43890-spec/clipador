@@ -5,7 +5,6 @@ import time
 import uuid
 import zipfile
 from flask import Flask, request, send_file, render_template_string, jsonify
-import requests
 
 app = Flask(__name__)
 BASE = "/tmp/clipador" if os.path.exists("/tmp") else "."
@@ -14,20 +13,7 @@ JOBS = {}
 SEG = 60
 
 
-def checar_kick_online(canal):
-    try:
-        url = f"https://kick.com/api/v2/channels/{canal}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        r = requests.get(url, headers=headers, timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            return data.get("livestream") is not None
-    except Exception:
-        pass
-    return False
-
-
-PAGINA = \"\"\"
+PAGINA = """
 <!doctype html>
 <html lang="pt-br">
 <head>
@@ -415,7 +401,7 @@ PAGINA = \"\"\"
 
     <section class="caixa" id="lives-box">
       <span class="diag-topo">Lives agora na Kick</span>
-      <div id="lives"><div style="color:var(--mutado); text-align:center; padding:15px;">Carregando lives...</div></div>
+      <div id="lives"></div>
     </section>
 
     <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
@@ -455,34 +441,35 @@ function mostrarPreview() {
 }
 document.getElementById('url').addEventListener('input', mostrarPreview);
 
-async function carregarLives() {
-  try {
-    const r = await fetch('/api/lives');
-    const canais = await r.json();
-    let h = '';
-    if (canais.length === 0) {
-      h = '<div style="color:var(--mutado); text-align:center; padding:15px;">Nenhum streamer online no momento.</div>';
-    } else {
-      canais.forEach(function (c, i) {
-        h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
-          '</span><button class="btn-mini" onclick="clipar(\'' + c.canal + '\')">Usar esta live</button></div>' +
-          '<iframe class="player" src="https://player.kick.com/' + c.canal + '?autoplay=true" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
-      });
-    }
-    document.getElementById('lives').innerHTML = h;
-  } catch (e) {
-    document.getElementById('lives').innerHTML = '<div style="color:var(--vivo); text-align:center; padding:15px;">Erro ao carregar lives.</div>';
-  }
+const CANAIS = [
+  {nome: 'Bak', plat: 'kick', canal: 'bak'},
+  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'}
+];
+
+function embedDe(c) {
+  return 'https://player.kick.com/' + c.canal + '?autoplay=true';
 }
 
-function clipar(canal) {
-  document.getElementById('url').value = 'https://kick.com/' + canal;
+function linkDe(c) {
+  return 'https://kick.com/' + c.canal;
+}
+
+function clipar(i) {
+  document.getElementById('url').value = linkDe(CANAIS[i]);
   mostrarPreview();
   window.scrollTo(0, 0);
 }
 
-carregarLives();
-setInterval(carregarLives, 30000);
+function montarLives() {
+  let h = '';
+  CANAIS.forEach(function (c, i) {
+    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+      '</span><button class="btn-mini" onclick="clipar(' + i + ')">Usar esta live</button></div>' +
+      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
+  });
+  document.getElementById('lives').innerHTML = h;
+}
+montarLives();
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -535,7 +522,7 @@ async function checar() {
 </script>
 </body>
 </html>
-\"\"\"
+"""
 
 
 def ler_fim(caminho, limite=700):
@@ -630,19 +617,6 @@ def inicio():
     return render_template_string(PAGINA)
 
 
-@app.route("/api/lives")
-def api_lives():
-    canais = [
-        {'nome': 'Bak', 'canal': 'bak'},
-        {'nome': 'Renato Vicente', 'canal': 'orenatovicente'},
-        {'nome': 'Coringa', 'canal': 'coringa'},
-        {'nome': 'Gabi Peixe', 'canal': 'gabipeixe'},
-        {'nome': 'Brabox', 'canal': 'brabox'}
-    ]
-    online = [c for c in canais if checar_kick_online(c['canal'])]
-    return jsonify(online)
-
-
 @app.route("/iniciar", methods=["POST"])
 def iniciar():
     dados = request.get_json()
@@ -671,7 +645,7 @@ def clipe(job_id, n):
         return "Não encontrado", 404
     arq = os.path.join(j["pasta"], "clipe_%03d.mp4" % (n - 1))
     if not os.path.exists(arq):
-        return "Not found", 404
+        return "Não encontrado", 404
     return send_file(arq, as_attachment=True, download_name="clipe_%d.mp4" % n)
 
 
