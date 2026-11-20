@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 import threading
@@ -10,29 +9,8 @@ from flask import Flask, request, send_file, render_template_string, jsonify
 app = Flask(__name__)
 BASE = "/tmp/clipador" if os.path.exists("/tmp") else "."
 os.makedirs(BASE, exist_ok=True)
-LIVES_JSON = os.path.join(BASE, "lives.json")
 JOBS = {}
 SEG = 60
-
-_MONITOR_INICIADO = False
-_MONITOR_LOCK = threading.Lock()
-
-
-def iniciar_monitor_background():
-    global _MONITOR_INICIADO
-    with _MONITOR_LOCK:
-        if _MONITOR_INICIADO:
-            return
-        try:
-            import monitor
-
-            threading.Thread(target=monitor.loop_monitor, daemon=True).start()
-            _MONITOR_INICIADO = True
-        except Exception:
-            pass
-
-
-iniciar_monitor_background()
 
 
 PAGINA = """
@@ -54,15 +32,10 @@ PAGINA = """
     --roxo-brilho: #a488ff;
     --texto: #f5f3ff;
     --mutado: #a69ec2;
-    --vivo: #ef4444;
   }
 
   * {
     box-sizing: border-box;
-  }
-
-  html {
-    scroll-behavior: smooth;
   }
 
   body {
@@ -76,65 +49,10 @@ PAGINA = """
     padding-bottom: 40px;
   }
 
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    background: rgba(7, 6, 11, 0.85);
-    border-bottom: 1px solid var(--borda);
-  }
-
-  .topbar-inner {
-    max-width: 540px;
-    margin: 0 auto;
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    text-decoration: none;
-    color: var(--texto);
-    font-weight: 700;
-    font-size: 1rem;
-  }
-
-  .logo-box {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #a855f7, #6366f1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    font-size: 0.9rem;
-    color: #fff;
-  }
-
-  .btn-topo {
-    background: var(--roxo);
-    color: #0d0a16;
-    font-weight: 700;
-    font-size: 0.85rem;
-    padding: 8px 14px;
-    border-radius: 999px;
-    text-decoration: none;
-    border: none;
-    cursor: pointer;
-  }
-
   .wrap {
     max-width: 540px;
     margin: 0 auto;
-    padding: 18px 16px 0;
+    padding: 20px 16px 0;
   }
 
   .hero-card {
@@ -149,7 +67,6 @@ PAGINA = """
     margin: 0;
     font-size: 1.4rem;
     font-weight: 800;
-    letter-spacing: -0.02em;
     line-height: 1.2;
   }
 
@@ -158,10 +75,6 @@ PAGINA = """
     color: var(--mutado);
     font-size: 0.9rem;
     line-height: 1.48;
-  }
-
-  .hero-sub strong {
-    color: var(--texto);
   }
 
   .campo {
@@ -185,30 +98,6 @@ PAGINA = """
     background: var(--input);
     color: var(--texto);
     outline: none;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  }
-
-  input::placeholder {
-    color: #8c84a8;
-  }
-
-  input:focus, select:focus {
-    border-color: var(--roxo-brilho);
-    box-shadow: 0 0 0 3px rgba(139, 108, 246, 0.22);
-  }
-
-  select {
-    appearance: none;
-    -webkit-appearance: none;
-    background-image:
-      linear-gradient(45deg, transparent 50%, var(--mutado) 50%),
-      linear-gradient(135deg, var(--mutado) 50%, transparent 50%);
-    background-position:
-      calc(100% - 18px) calc(50% - 2px),
-      calc(100% - 13px) calc(50% - 2px);
-    background-size: 5px 5px, 5px 5px;
-    background-repeat: no-repeat;
-    padding-right: 36px;
   }
 
   .btn-principal {
@@ -222,11 +111,6 @@ PAGINA = """
     background: var(--roxo);
     color: #0d0a16;
     cursor: pointer;
-    box-shadow: 0 10px 26px rgba(139, 108, 246, 0.35);
-  }
-
-  .btn-principal:hover {
-    background: var(--roxo-brilho);
   }
 
   .btn-principal:disabled {
@@ -243,11 +127,6 @@ PAGINA = """
     font-size: 0.92rem;
   }
 
-  #status {
-    font-weight: 600;
-    color: var(--texto);
-  }
-
   #lista a {
     display: block;
     color: var(--texto);
@@ -258,7 +137,6 @@ PAGINA = """
     border: 1px solid var(--borda);
     margin-top: 8px;
     font-size: 0.9rem;
-    font-weight: 500;
   }
 
   #lista a:first-child {
@@ -286,186 +164,17 @@ PAGINA = """
     margin: 8px 0 0;
     line-height: 1.45;
   }
-
-  .lives-box {
-    margin-top: 18px;
-    background: var(--surface);
-    border: 1px solid var(--borda);
-    border-radius: 20px;
-    padding: 16px;
-  }
-
-  .lives-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.9rem;
-    font-weight: 700;
-    margin-bottom: 12px;
-  }
-
-  .live-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .live-tag::before {
-    content: "";
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--vivo);
-    box-shadow: 0 0 10px var(--vivo);
-  }
-
-  .live-tempo {
-    color: var(--mutado);
-    font-variant-numeric: tabular-nums;
-    font-size: 0.8rem;
-  }
-
-  .tela-live {
-    position: relative;
-    border-radius: 14px;
-    overflow: hidden;
-    background: linear-gradient(135deg, #241942 0%, #110d1d 60%, #1c1333 100%);
-    border: 1px solid var(--borda-forte);
-    padding: 16px 14px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-  }
-
-  .tela-topo-badge {
-    align-self: flex-start;
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    color: #e9d5ff;
-    font-size: 0.72rem;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 999px;
-  }
-
-  .tela-centro {
-    margin: 12px 0;
-  }
-
-  .tela-centro strong {
-    display: block;
-    font-size: 1rem;
-    color: #fff;
-  }
-
-  .tela-centro span {
-    font-size: 0.82rem;
-    color: var(--mutado);
-  }
-
-  .canais-grid {
-    margin-top: 12px;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-
-  .canais-grid.vazio {
-    display: block;
-  }
-
-  .sem-lives {
-    background: rgba(18, 16, 26, 0.75);
-    border: 1px dashed var(--borda);
-    border-radius: 12px;
-    padding: 14px;
-    font-size: 0.85rem;
-    color: var(--mutado);
-    text-align: center;
-  }
-
-  .card-canal {
-    background: var(--surface-2);
-    border: 1px solid rgba(239, 68, 68, 0.55);
-    border-radius: 14px;
-    padding: 12px;
-    text-align: left;
-    color: var(--texto);
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    min-height: 108px;
-    transition: border-color 0.2s ease, transform 0.15s ease;
-  }
-
-  .card-canal:hover {
-    border-color: var(--roxo-brilho);
-    transform: translateY(-2px);
-  }
-
-  .estado-linha {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.7rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    margin-bottom: 6px;
-  }
-
-  .ponto {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--vivo);
-    box-shadow: 0 0 8px var(--vivo);
-  }
-
-  .estado-texto {
-    color: #fca5a5;
-  }
-
-  .card-nome {
-    font-size: 0.92rem;
-    font-weight: 700;
-    line-height: 1.25;
-  }
-
-  .card-acao {
-    margin-top: 8px;
-    font-size: 0.74rem;
-    color: var(--roxo-brilho);
-  }
-
-  .aviso {
-    color: #7c7496;
-    font-size: 0.78rem;
-    text-align: center;
-    margin: 18px 0 0;
-    line-height: 1.45;
-  }
 </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <a class="brand" href="#">
-        <span class="logo-box">CL</span>
-        <span>Clipador de lives</span>
-      </a>
-      <a class="btn-topo" href="#url">Colar link</a>
-    </div>
-  </header>
-
   <main class="wrap">
     <section class="hero-card">
-      <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
-      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong>, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
+      <h1 class="hero-titulo">Clipador de lives</h1>
+      <p class="hero-sub">Cole o link da live, escolha a duração e baixe os clipes de 1 minuto.</p>
 
       <div class="campo">
         <label for="url">Link da live</label>
-        <input id="url" type="url" placeholder="Cole o link da live (Kick, Twitch, YouTube...)">
+        <input id="url" type="url" placeholder="Cole o link da live (YouTube, Kick, Twitch...)">
       </div>
 
       <div class="campo">
@@ -487,101 +196,10 @@ PAGINA = """
       <span class="diag-topo">Diagnóstico</span>
       <pre id="diag">-</pre>
     </div>
-
-    <section class="lives-box" aria-label="Lives ao vivo">
-      <div class="lives-top">
-        <span class="live-tag">Ao vivo agora</span>
-        <span class="live-tempo" id="lives-atualizacao">A verificar...</span>
-      </div>
-
-      <div class="tela-live">
-        <span class="tela-topo-badge">SOMENTE AO VIVO</span>
-        <div class="tela-centro">
-          <strong id="preview-titulo">Canais ao vivo</strong>
-          <span id="preview-sub">Toca num canal ao vivo para preencher o link automaticamente.</span>
-        </div>
-
-        <div class="canais-grid vazio" id="canais-grid">
-          <div class="sem-lives">A verificar canais ao vivo...</div>
-        </div>
-      </div>
-    </section>
-
-    <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
   </main>
 
 <script>
 let job = null;
-
-function focarUrl() {
-  const input = document.getElementById('url');
-  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  setTimeout(() => input.focus(), 250);
-}
-
-function selecionarCanal(nome, url) {
-  const input = document.getElementById('url');
-  input.value = url;
-  document.getElementById('preview-titulo').innerText = nome + ' (AO VIVO)';
-  document.getElementById('preview-sub').innerText = 'Link preenchido. Clica em "Cortar meu vídeo" para iniciar.';
-  focarUrl();
-}
-
-async function carregarLives() {
-  try {
-    const r = await fetch('/api/lives');
-    const lista = await r.json();
-    const grid = document.getElementById('canais-grid');
-    const atualizacao = document.getElementById('lives-atualizacao');
-
-    if (!Array.isArray(lista)) {
-      grid.className = 'canais-grid vazio';
-      grid.innerHTML = '<div class="sem-lives">Nenhuma live ao vivo no momento.</div>';
-      atualizacao.innerText = 'Sem lives';
-      return;
-    }
-
-    let maxTs = 0;
-    for (const c of lista) {
-      if (c.atualizado_em && c.atualizado_em > maxTs) {
-        maxTs = c.atualizado_em;
-      }
-    }
-
-    const aoVivo = lista.filter(c => Boolean(c.online));
-
-    if (aoVivo.length === 0) {
-      grid.className = 'canais-grid vazio';
-      grid.innerHTML = '<div class="sem-lives">Nenhum dos canais monitorizados está ao vivo agora.</div>';
-      atualizacao.innerText = maxTs > 0
-        ? 'Atualizado ' + new Date(maxTs * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : 'Sem lives';
-      return;
-    }
-
-    grid.className = 'canais-grid';
-    let html = '';
-    for (const c of aoVivo) {
-      const nomeEsc = String(c.nome || 'Canal').replace(/'/g, "\\'");
-      const urlEsc = String(c.url || '').replace(/'/g, "\\'");
-      html += '<button type="button" class="card-canal" onclick="selecionarCanal(\'' + nomeEsc + '\', \'' + urlEsc + '\')">' +
-        '<div class="estado-linha"><span class="ponto"></span><span class="estado-texto">AO VIVO</span></div>' +
-        '<div class="card-nome">' + (c.nome || 'Canal') + '</div>' +
-        '<div class="card-acao">Usar live →</div>' +
-        '</button>';
-    }
-    grid.innerHTML = html;
-
-    if (maxTs > 0) {
-      const d = new Date(maxTs * 1000);
-      atualizacao.innerText = 'Atualizado ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else {
-      atualizacao.innerText = 'Ativo';
-    }
-  } catch (e) {
-    document.getElementById('lives-atualizacao').innerText = 'Erro ao ler';
-  }
-}
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -591,7 +209,11 @@ async function iniciar() {
   btn.disabled = true;
   document.getElementById('status').innerText = 'A iniciar...';
   try {
-    const r = await fetch('/iniciar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url:url, min:min})});
+    const r = await fetch('/iniciar', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: url, min: min})
+    });
     const d = await r.json();
     if (!d.id) {
       document.getElementById('status').innerText = 'Link inválido.';
@@ -627,9 +249,6 @@ async function checar() {
     document.getElementById('btn-gravar').disabled = false;
   }
 }
-
-carregarLives();
-setInterval(carregarLives, 15000);
 </script>
 </body>
 </html>
@@ -703,8 +322,10 @@ def gravar(job_id, url, minutos):
         job["clipes"] = max(0, len(feitos) - 1)
         tam = tamanho_pasta(pasta)
         job["msg"] = "A gravar... " + str(job["clipes"]) + " clipes prontos"
-        job["diag"] = ("Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
-                       + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500))
+        job["diag"] = (
+            "Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
+            + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500)
+        )
         if time.time() - inicio > 60 and tam == 0:
             proc.kill()
             break
@@ -717,29 +338,13 @@ def gravar(job_id, url, minutos):
         job["msg"] = "Pronto! " + str(len(feitos)) + " clipes gerados."
     else:
         job["estado"] = "erro"
-        job["msg"] = "Nenhum dado chegou em 60 segundos. A plataforma pode ter bloqueado o servidor."
+        job["msg"] = "Nenhum dado chegou em 60 segundos."
         job["diag"] = ler_fim(log_ffmpeg, 800)
 
 
 @app.route("/")
 def inicio():
-    iniciar_monitor_background()
     return render_template_string(PAGINA)
-
-
-@app.route("/api/lives")
-def api_lives():
-    iniciar_monitor_background()
-    if not os.path.exists(LIVES_JSON):
-        return jsonify([])
-    try:
-        with open(LIVES_JSON, "r", encoding="utf-8") as f:
-            dados = json.load(f)
-        if isinstance(dados, list):
-            return jsonify(dados)
-    except Exception:
-        pass
-    return jsonify([])
 
 
 @app.route("/iniciar", methods=["POST"])
@@ -760,7 +365,12 @@ def status(job_id):
     j = JOBS.get(job_id)
     if not j:
         return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
-    return jsonify({"estado": j["estado"], "msg": j["msg"], "clipes": j["clipes"], "diag": j.get("diag", "")})
+    return jsonify({
+        "estado": j["estado"],
+        "msg": j["msg"],
+        "clipes": j["clipes"],
+        "diag": j.get("diag", ""),
+    })
 
 
 @app.route("/clipe/<job_id>/<int:n>")
@@ -788,5 +398,4 @@ def baixar_zip(job_id):
 
 
 if __name__ == "__main__":
-    iniciar_monitor_background()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
