@@ -163,7 +163,12 @@ PAGINA = """
     color: #c4b5fd;
     margin: 8px 0 0;
     line-height: 1.45;
-  }
+  }  .card-live{background:var(--surface);border:1px solid var(--borda-forte);border-radius:20px;padding:14px;margin-top:14px}
+  .card-topo{display:flex;justify-content:space-between;margin-bottom:10px;font-weight:700}
+  .ponto{display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff5a4d;margin-right:8px}
+  .player{width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
+  .player-aviso{margin:8px 0 0;font-size:.76rem;color:var(--mutado)}
+
 </style>
 </head>
 <body>
@@ -188,6 +193,14 @@ PAGINA = """
       </div>
 
       <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
+    </section>
+    <section class="card-live" id="card-live" style="display:none">
+      <div class="card-topo">
+        <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
+        <span>AO VIVO</span>
+      </div>
+      <iframe id="player" class="player" allowfullscreen allow="autoplay; fullscreen"></iframe>
+      <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
     </section>
 
     <div class="caixa" id="status">Aguardando link.</div>
@@ -249,6 +262,39 @@ async function checar() {
     document.getElementById('btn-gravar').disabled = false;
   }
 }
+function plataforma(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace('www.', '');
+    const partes = u.pathname.split('/').filter(Boolean);
+    if (host === 'kick.com' && partes[0]) {
+      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true&muted=true'};
+    }
+    if (host === 'twitch.tv' && partes[0]) {
+      return {nome: 'Twitch', embed: 'https://player.twitch.tv/?channel=' + partes[0] + '&parent=' + location.hostname + '&muted=true'};
+    }
+  } catch (e) {}
+  return null;
+}
+
+let ultimoEmbed = '';
+function mostrarPreview() {
+  const p = plataforma(document.getElementById('url').value.trim());
+  const card = document.getElementById('card-live');
+  if (!p) {
+    card.style.display = 'none';
+    document.getElementById('player').src = 'about:blank';
+    ultimoEmbed = '';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('plat-nome').innerText = p.nome;
+  if (p.embed !== ultimoEmbed) {
+    document.getElementById('player').src = p.embed;
+    ultimoEmbed = p.embed;
+  }
+}
+document.getElementById('url').addEventListener('input', mostrarPreview);
 </script>
 </body>
 </html>
