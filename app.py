@@ -25,11 +25,12 @@ PAGINA = """
  button { background:#9146ff; color:white; font-weight:bold; }
  .caixa { background:#1c1c24; padding:14px; border-radius:8px; margin-top:16px; }
  .aviso { color:#aaa; font-size:13px; margin-top:16px; }
+ pre { white-space:pre-wrap; word-break:break-all; font-size:11px; color:#9fd; margin:0; }
 </style>
 </head>
 <body>
 <h2>Clipador de lives</h2>
-<p>Cole o link de uma live que está AO VIVO agora. Ela será gravada e cortada em clipes de 1 minuto.</p>
+<p>Cole o link de uma live AO VIVO. Ela será gravada e cortada em clipes de 1 minuto.</p>
 <input id="url" type="url" placeholder="https://...">
 <select id="min">
  <option value="5">Gravar 5 minutos (teste)</option>
@@ -40,6 +41,7 @@ PAGINA = """
 <button onclick="iniciar()">Começar a gravar</button>
 <div class="caixa" id="status">Aguardando link.</div>
 <div class="caixa" id="lista" style="display:none"></div>
+<div class="caixa"><b>Diagnóstico</b><br><pre id="diag">-</pre></div>
 <p class="aviso">Use só com autorização do streamer ou nas suas próprias lives.</p>
 <script>
 let job = null;
@@ -58,6 +60,7 @@ async function checar() {
   const r = await fetch('/status/' + job);
   const d = await r.json();
   document.getElementById('status').innerText = d.msg;
+  document.getElementById('diag').innerText = d.diag || '-';
   const lista = document.getElementById('lista');
   if (d.clipes > 0) {
     lista.style.display = 'block';
@@ -67,12 +70,28 @@ async function checar() {
     }
     lista.innerHTML = h;
   }
-  if (d.estado !== 'fim' && d.estado !== 'erro') { setTimeout(checar, 4000); }
+  if (d.estado !== 'fim' && d.estado !== 'erro') { setTimeout(checar, 3000); }
 }
 </script>
 </body>
 </html>
 """
+
+def ler_fim(caminho, limite=700):
+    try:
+        with open(caminho, "r", errors="ignore") as f:
+            texto = f.read()
+        texto = texto.replace("\r", "\n")
+        return texto[-limite:]
+    except Exception:
+        return ""
+
+def tamanho_pasta(pasta):
+    total = 0
+    for f in os.listdir(pasta):
+        if f.startswith("clipe_"):
+            total += os.path.getsize(os.path.join(pasta, f))
+    return total
 
 def gravar(job_id, url, minutos):
     job = JOBS[job_id]
@@ -80,42 +99,65 @@ def gravar(job_id, url, minutos):
     os.makedirs(pasta, exist_ok=True)
     job["pasta"] = pasta
     padrao = os.path.join(pasta, "clipe_%03d.mp4")
+    log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
+
+    job["estado"] = "abrindo"
+    job["msg"] = "Abrindo a live..."
+    job["diag"] = "Rodando yt-dlp..."
     cmd_url = ["yt-dlp", "-g", "-f", "best[height<=720]/best", url]
     try:
         r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
-        links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
-        if not links:
-            raise Exception(r.stderr[-300:] or "sem link de stream")
-        stream = links[0]
     except Exception as e:
         job["estado"] = "erro"
-        job["msg"] = "Erro ao abrir a live: " + str(e)[-200:]
+        job["msg"] = "yt-dlp demorou demais ou falhou."
+        job["diag"] = str(e)[-500:]
         return
+    links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
+    if not links:
+        job["estado"] = "erro"
+        job["msg"] = "O yt-dlp não conseguiu o link da live."
+        job["diag"] = (r.stderr or "sem mensagem")[-700:]
+        return
+    stream = links[0]
+    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". Iniciando ffmpeg..."
+
     job["estado"] = "gravando"
-    job["msg"] = "Gravando e cortando em clipes de 1 minuto..."
+    job["msg"] = "Gravando... 0 clipes prontos"
     cmd = [
-        "ffmpeg", "-y", "-i", stream,
+        "ffmpeg", "-y",
+        "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "-rw_timeout", "15000000",
+        "-i", stream,
         "-t", str(int(minutos) * 60),
         "-c", "copy",
         "-f", "segment", "-segment_time", str(SEG),
         "-reset_timestamps", "1",
         padrao,
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    logf = open(log_ffmpeg, "w")
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
+    inicio = time.time()
     while proc.poll() is None:
         feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
         job["clipes"] = max(0, len(feitos) - 1)
+        tam = tamanho_pasta(pasta)
         job["msg"] = "Gravando... " + str(job["clipes"]) + " clipes prontos"
+        job["diag"] = ("Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
+                       + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500))
+        if time.time() - inicio > 60 and tam == 0:
+            proc.kill()
+            break
         time.sleep(3)
+    logf.close()
     feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
     job["clipes"] = len(feitos)
-    if feitos:
+    if feitos and tamanho_pasta(pasta) > 0:
         job["estado"] = "fim"
         job["msg"] = "Pronto! " + str(len(feitos)) + " clipes gerados."
     else:
         job["estado"] = "erro"
-        erro = proc.stderr.read().decode(errors="ignore")[-300:]
-        job["msg"] = "Nenhum clipe gerado. " + erro
+        job["msg"] = "Nenhum dado chegou em 60 segundos. A Kick pode ter bloqueado o servidor."
+        job["diag"] = ler_fim(log_ffmpeg, 800)
 
 @app.route("/")
 def inicio():
@@ -129,7 +171,7 @@ def iniciar():
     if not url.startswith("http"):
         return jsonify({"id": ""}), 400
     job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0}
+    JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": ""}
     threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
     return jsonify({"id": job_id})
 
@@ -137,8 +179,8 @@ def iniciar():
 def status(job_id):
     j = JOBS.get(job_id)
     if not j:
-        return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0})
-    return jsonify({"estado": j["estado"], "msg": j["msg"], "clipes": j["clipes"]})
+        return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
+    return jsonify({"estado": j["estado"], "msg": j["msg"], "clipes": j["clipes"], "diag": j.get("diag", "")})
 
 @app.route("/clipe/<job_id>/<int:n>")
 def clipe(job_id, n):
