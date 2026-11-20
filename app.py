@@ -337,6 +337,43 @@ PAGINA = """
     filter: brightness(1.1);
   }
 
+  .placeholder {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 12px;
+    background: #000;
+    border: 1px solid var(--borda);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--texto);
+  }
+  .placeholder .play {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--kick-verde);
+    color: #0d0a16;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    padding-left: 4px;
+  }
+  .placeholder small {
+    color: var(--mutado);
+    font-size: .78rem;
+  }
+  .viewers {
+    font-weight: 500;
+    font-size: .8rem;
+    color: var(--mutado);
+    margin-left: 8px;
+  }
+
   .aviso {
     color: #7c7496;
     font-size: 0.78rem;
@@ -467,17 +504,43 @@ function clipar(i) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+let assinaturaLives = '';
+const tocando = new Set();
+
+function playerHtml(c) {
+  return '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe>';
+}
+
+function tocar(canal) {
+  tocando.add(canal);
+  const el = document.getElementById('slot-' + canal);
+  const c = CANAIS.find(function (x) { return x.canal === canal; });
+  if (el && c) { el.innerHTML = playerHtml(c); }
+}
+
 function montarLives(lista) {
+  // lista: [{canal, nome, viewers}] já ordenada por público (maior primeiro)
+  const assinatura = lista.map(function (c) { return c.canal + ':' + c.viewers; }).join('|');
+  if (assinatura === assinaturaLives) { return; }
+  assinaturaLives = assinatura;
+
+  const temPublico = lista.length > 0 && lista[0].viewers !== null;
   let h = '';
-  lista.forEach(function (c) {
+  lista.forEach(function (c, pos) {
     const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
-    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+    const autoplay = temPublico && pos === 0;
+    const rodando = autoplay || tocando.has(c.canal);
+    const info = c.viewers !== null ? '<span class="viewers">' + c.viewers.toLocaleString('pt-BR') + ' assistindo</span>' : '';
+    const corpo = rodando
+      ? playerHtml(c)
+      : '<div class="placeholder" data-canal="' + c.canal + '" onclick="tocar(this.dataset.canal)"><div class="play">▶</div><small>Clique para assistir</small></div>';
+    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome + info +
       '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
-      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
+      '<div id="slot-' + c.canal + '">' + corpo + '</div></div>';
   });
   document.getElementById('lives').innerHTML = h;
 }
-montarLives(CANAIS);
+montarLives(CANAIS.map(function (c) { return {canal: c.canal, nome: c.nome, viewers: null}; }));
 
 async function filtrarOnline() {
   try {
@@ -485,25 +548,30 @@ async function filtrarOnline() {
       CANAIS.map(async function (c) {
         try {
           const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
-          if (!r.ok) { return {canal: c, status: 'incerto'}; }
+          if (!r.ok) { return {c: c, status: 'incerto', viewers: null}; }
           const d = await r.json();
           if (d && 'livestream' in d) {
-            return {canal: c, status: d.livestream ? 'online' : 'offline'};
+            if (!d.livestream) { return {c: c, status: 'offline', viewers: null}; }
+            const v = d.livestream.viewer_count != null ? d.livestream.viewer_count : d.livestream.viewers;
+            return {c: c, status: 'online', viewers: (typeof v === 'number') ? v : null};
           }
-          return {canal: c, status: 'incerto'};
+          return {c: c, status: 'incerto', viewers: null};
         } catch (e) {
-          return {canal: c, status: 'incerto'};
+          return {c: c, status: 'incerto', viewers: null};
         }
       })
     );
-    const confirmadosOnline = resultados
-      .filter(function (item) { return item.status === 'online'; })
-      .map(function (item) { return item.canal; });
-    const confirmadosOffline = resultados.filter(function (item) { return item.status === 'offline'; }).length;
 
-    if (confirmadosOnline.length > 0) {
-      montarLives(confirmadosOnline);
-    } else if (confirmadosOffline === CANAIS.length) {
+    const online = resultados.filter(function (x) { return x.status === 'online'; });
+    const offline = resultados.filter(function (x) { return x.status === 'offline'; }).length;
+
+    if (online.length > 0) {
+      online.sort(function (a, b) { return (b.viewers || 0) - (a.viewers || 0); });
+      montarLives(online.map(function (x) {
+        return {canal: x.c.canal, nome: x.c.nome, viewers: x.viewers};
+      }));
+    } else if (offline === CANAIS.length) {
+      assinaturaLives = '';
       montarLives([]);
     }
   } catch (e) {}
