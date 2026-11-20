@@ -1,10 +1,10 @@
 import json
 import os
+import subprocess
 import threading
 import time
 import uuid
 import zipfile
-import subprocess
 from flask import Flask, request, send_file, render_template_string, jsonify
 
 app = Flask(__name__)
@@ -25,6 +25,7 @@ def iniciar_monitor_background():
             return
         try:
             import monitor
+
             threading.Thread(target=monitor.loop_monitor, daemon=True).start()
             _MONITOR_INICIADO = True
         except Exception:
@@ -54,7 +55,6 @@ PAGINA = """
     --texto: #f5f3ff;
     --mutado: #a69ec2;
     --vivo: #ef4444;
-    --offline: #6b7280;
   }
 
   * {
@@ -370,9 +370,23 @@ PAGINA = """
     gap: 10px;
   }
 
+  .canais-grid.vazio {
+    display: block;
+  }
+
+  .sem-lives {
+    background: rgba(18, 16, 26, 0.75);
+    border: 1px dashed var(--borda);
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 0.85rem;
+    color: var(--mutado);
+    text-align: center;
+  }
+
   .card-canal {
     background: var(--surface-2);
-    border: 1px solid var(--borda);
+    border: 1px solid rgba(239, 68, 68, 0.55);
     border-radius: 14px;
     padding: 12px;
     text-align: left;
@@ -390,10 +404,6 @@ PAGINA = """
     transform: translateY(-2px);
   }
 
-  .card-canal.online {
-    border-color: rgba(239, 68, 68, 0.55);
-  }
-
   .estado-linha {
     display: flex;
     align-items: center;
@@ -408,19 +418,11 @@ PAGINA = """
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--offline);
-  }
-
-  .card-canal.online .ponto {
     background: var(--vivo);
     box-shadow: 0 0 8px var(--vivo);
   }
 
   .estado-texto {
-    color: var(--mutado);
-  }
-
-  .card-canal.online .estado-texto {
     color: #fca5a5;
   }
 
@@ -486,25 +488,21 @@ PAGINA = """
       <pre id="diag">-</pre>
     </div>
 
-    <section class="lives-box" aria-label="Lives monitorizadas">
+    <section class="lives-box" aria-label="Lives ao vivo">
       <div class="lives-top">
-        <span class="live-tag">Monitor de lives</span>
+        <span class="live-tag">Ao vivo agora</span>
         <span class="live-tempo" id="lives-atualizacao">A verificar...</span>
       </div>
 
       <div class="tela-live">
-        <span class="tela-topo-badge">ESTADO EM TEMPO REAL</span>
+        <span class="tela-topo-badge">SOMENTE AO VIVO</span>
         <div class="tela-centro">
-          <strong id="preview-titulo">Canais monitorizados</strong>
-          <span id="preview-sub">Toca num canal para preencher o link automaticamente.</span>
+          <strong id="preview-titulo">Canais ao vivo</strong>
+          <span id="preview-sub">Toca num canal ao vivo para preencher o link automaticamente.</span>
         </div>
 
-        <div class="canais-grid" id="canais-grid">
-          <div class="card-canal">
-            <div class="estado-linha"><span class="ponto"></span><span class="estado-texto">A carregar</span></div>
-            <div class="card-nome">A obter estado...</div>
-            <div class="card-acao">A aguardar monitor</div>
-          </div>
+        <div class="canais-grid vazio" id="canais-grid">
+          <div class="sem-lives">A verificar canais ao vivo...</div>
         </div>
       </div>
     </section>
@@ -521,13 +519,11 @@ function focarUrl() {
   setTimeout(() => input.focus(), 250);
 }
 
-function selecionarCanal(nome, url, online) {
+function selecionarCanal(nome, url) {
   const input = document.getElementById('url');
   input.value = url;
-  document.getElementById('preview-titulo').innerText = nome + (online ? ' (AO VIVO)' : ' (OFFLINE)');
-  document.getElementById('preview-sub').innerText = online
-    ? 'Link preenchido. Clica em "Cortar meu vídeo" para iniciar.'
-    : 'Canal marcado como offline no momento. Link preenchido no campo.';
+  document.getElementById('preview-titulo').innerText = nome + ' (AO VIVO)';
+  document.getElementById('preview-sub').innerText = 'Link preenchido. Clica em "Cortar meu vídeo" para iniciar.';
   focarUrl();
 }
 
@@ -538,25 +534,40 @@ async function carregarLives() {
     const grid = document.getElementById('canais-grid');
     const atualizacao = document.getElementById('lives-atualizacao');
 
-    if (!Array.isArray(lista) || lista.length === 0) {
-      grid.innerHTML = '<div class="card-canal"><div class="estado-linha"><span class="ponto"></span><span class="estado-texto">Sem dados</span></div><div class="card-nome">Nenhuma live registada ainda</div><div class="card-acao">O monitor está a iniciar</div></div>';
-      atualizacao.innerText = 'Sem leitura';
+    if (!Array.isArray(lista)) {
+      grid.className = 'canais-grid vazio';
+      grid.innerHTML = '<div class="sem-lives">Nenhuma live ao vivo no momento.</div>';
+      atualizacao.innerText = 'Sem lives';
       return;
     }
 
-    let html = '';
     let maxTs = 0;
     for (const c of lista) {
-      const online = Boolean(c.online);
       if (c.atualizado_em && c.atualizado_em > maxTs) {
         maxTs = c.atualizado_em;
       }
+    }
+
+    const aoVivo = lista.filter(c => Boolean(c.online));
+
+    if (aoVivo.length === 0) {
+      grid.className = 'canais-grid vazio';
+      grid.innerHTML = '<div class="sem-lives">Nenhum dos canais monitorizados está ao vivo agora.</div>';
+      atualizacao.innerText = maxTs > 0
+        ? 'Atualizado ' + new Date(maxTs * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : 'Sem lives';
+      return;
+    }
+
+    grid.className = 'canais-grid';
+    let html = '';
+    for (const c of aoVivo) {
       const nomeEsc = String(c.nome || 'Canal').replace(/'/g, "\\'");
       const urlEsc = String(c.url || '').replace(/'/g, "\\'");
-      html += '<button type="button" class="card-canal ' + (online ? 'online' : '') + '" onclick="selecionarCanal(\'' + nomeEsc + '\', \'' + urlEsc + '\', ' + online + ')">' +
-        '<div class="estado-linha"><span class="ponto"></span><span class="estado-texto">' + (online ? 'AO VIVO' : 'OFFLINE') + '</span></div>' +
+      html += '<button type="button" class="card-canal" onclick="selecionarCanal(\'' + nomeEsc + '\', \'' + urlEsc + '\')">' +
+        '<div class="estado-linha"><span class="ponto"></span><span class="estado-texto">AO VIVO</span></div>' +
         '<div class="card-nome">' + (c.nome || 'Canal') + '</div>' +
-        '<div class="card-acao">' + (online ? 'Usar live →' : 'Preencher link →') + '</div>' +
+        '<div class="card-acao">Usar live →</div>' +
         '</button>';
     }
     grid.innerHTML = html;
