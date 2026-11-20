@@ -33,28 +33,16 @@ PAGINA = """
     --texto: #f5f3ff;
     --mutado: #a69ec2;
   }
-
-  * {
-    box-sizing: border-box;
-  }
-
+  * { box-sizing: border-box; }
   body {
     margin: 0;
     min-height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
     color: var(--texto);
-    background:
-      radial-gradient(ellipse at 50% -8%, rgba(139, 108, 246, 0.28), transparent 55%),
-      var(--bg);
+    background: radial-gradient(ellipse at 50% -8%, rgba(139, 108, 246, 0.28), transparent 55%), var(--bg);
     padding-bottom: 40px;
   }
-
-  .wrap {
-    max-width: 540px;
-    margin: 0 auto;
-    padding: 20px 16px 0;
-  }
-
+  .wrap { max-width: 540px; margin: 0 auto; padding: 20px 16px 0; }
   .hero-card {
     background: var(--surface);
     border: 1px solid var(--borda-forte);
@@ -62,33 +50,10 @@ PAGINA = """
     padding: 20px 18px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   }
-
-  .hero-titulo {
-    margin: 0;
-    font-size: 1.4rem;
-    font-weight: 800;
-    line-height: 1.2;
-  }
-
-  .hero-sub {
-    margin: 8px 0 16px;
-    color: var(--mutado);
-    font-size: 0.9rem;
-    line-height: 1.48;
-  }
-
-  .campo {
-    margin-bottom: 12px;
-  }
-
-  label {
-    display: block;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--mutado);
-    margin-bottom: 6px;
-  }
-
+  .hero-titulo { margin: 0; font-size: 1.4rem; font-weight: 800; line-height: 1.2; }
+  .hero-sub { margin: 8px 0 16px; color: var(--mutado); font-size: 0.9rem; line-height: 1.48; }
+  .campo { margin-bottom: 12px; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--mutado); margin-bottom: 6px; }
   input, select {
     width: 100%;
     padding: 14px;
@@ -99,7 +64,6 @@ PAGINA = """
     color: var(--texto);
     outline: none;
   }
-
   .btn-principal {
     width: 100%;
     padding: 15px 18px;
@@ -112,12 +76,7 @@ PAGINA = """
     color: #0d0a16;
     cursor: pointer;
   }
-
-  .btn-principal:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
+  .btn-principal:disabled { opacity: 0.55; cursor: not-allowed; }
   .caixa {
     background: var(--surface);
     border: 1px solid var(--borda);
@@ -126,7 +85,6 @@ PAGINA = """
     margin-top: 14px;
     font-size: 0.92rem;
   }
-
   #lista a {
     display: block;
     color: var(--texto);
@@ -138,7 +96,6 @@ PAGINA = """
     margin-top: 8px;
     font-size: 0.9rem;
   }
-
   #lista a:first-child {
     margin-top: 0;
     background: rgba(139, 108, 246, 0.22);
@@ -146,7 +103,6 @@ PAGINA = """
     color: var(--roxo-brilho);
     font-weight: 700;
   }
-
   .diag-topo {
     font-size: 0.76rem;
     text-transform: uppercase;
@@ -154,7 +110,6 @@ PAGINA = """
     color: var(--mutado);
     font-weight: 700;
   }
-
   pre {
     white-space: pre-wrap;
     word-break: break-word;
@@ -164,7 +119,6 @@ PAGINA = """
     margin: 8px 0 0;
     line-height: 1.45;
   }
-
   .card-live {
     display: none;
     background: var(--surface);
@@ -173,7 +127,6 @@ PAGINA = """
     padding: 14px;
     margin-top: 14px;
   }
-
   .card-topo {
     display: flex;
     justify-content: space-between;
@@ -181,7 +134,6 @@ PAGINA = """
     margin-bottom: 10px;
     font-weight: 700;
   }
-
   .ponto {
     display: inline-block;
     width: 10px;
@@ -190,71 +142,17 @@ PAGINA = """
     background: #ff5a4d;
     margin-right: 8px;
   }
-
-  .tempo {
-    color: var(--mutado);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .player {
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    border: 0;
-    border-radius: 12px;
-    background: #000;
-  }
-
-  .player-aviso {
-    margin: 8px 0 0;
-    font-size: 0.76rem;
-    color: var(--mutado);
-  }
-
-  .onda-box {
-    position: relative;
-    margin-top: 28px;
-  }
-
-  .rotulos {
-    position: absolute;
-    top: -20px;
-    left: 0;
-    right: 0;
-    height: 18px;
-  }
-
-  .rotulos span {
-    position: absolute;
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: var(--roxo-brilho);
-  }
-
-  .onda {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    height: 56px;
-  }
-
-  .onda i {
-    flex: 1;
-    border-radius: 2px;
-    background: rgba(168, 130, 255, 0.28);
-  }
-
-  .onda i.on {
-    background: var(--roxo-brilho);
-  }
-
-  .onda i.rec {
-    background: var(--roxo);
-    animation: piscar 1s infinite;
-  }
-
-  @keyframes piscar {
-    50% { opacity: 0.35; }
-  }
+  .tempo { color: var(--mutado); font-variant-numeric: tabular-nums; }
+  .player { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; background: #000; }
+  .player-aviso { margin: 8px 0 0; font-size: 0.76rem; color: var(--mutado); }
+  .onda-box { position: relative; margin-top: 28px; }
+  .rotulos { position: absolute; top: -20px; left: 0; right: 0; height: 18px; }
+  .rotulos span { position: absolute; font-size: 0.75rem; font-weight: 700; color: var(--roxo-brilho); }
+  .onda { display: flex; align-items: center; gap: 2px; height: 56px; }
+  .onda i { flex: 1; border-radius: 2px; background: rgba(168, 130, 255, 0.28); }
+  .onda i.on { background: var(--roxo-brilho); }
+  .onda i.rec { background: var(--roxo); animation: piscar 1s infinite; }
+  @keyframes piscar { 50% { opacity: 0.35; } }
 </style>
 </head>
 <body>
@@ -493,4 +391,15 @@ def gravar(job_id, url, minutos):
     links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
     if not links:
         job["estado"] = "erro"
-        job["
+        job["msg"] = "O yt-dlp não conseguiu obter o link da live."
+        job["diag"] = (r.stderr or "sem mensagem")[-700:]
+        return
+    stream = links[0]
+    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". A iniciar ffmpeg..."
+
+    job["estado"] = "gravando"
+    job["msg"] = "A gravar... 0 clipes prontos"
+    cmd = [
+        "ffmpeg", "-y",
+        "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "-rw_timeout", "15000000",
