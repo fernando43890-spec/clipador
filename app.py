@@ -14,7 +14,6 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 SEG = 60
 
-
 PAGINA = """
 <!doctype html>
 <html lang="pt-br">
@@ -185,7 +184,10 @@ PAGINA = """
     appearance: none;
     -webkit-appearance: none;
     background-image:
-      linear-gradient(45deg, transparent 50%, var(--mutado) 518px) calc(50% - 2px),
+      linear-gradient(45deg, transparent 50%, var(--mutado) 50%),
+      linear-gradient(135deg, var(--mutado) 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) calc(50% - 2px),
       calc(100% - 13px) calc(50% - 2px);
     background-size: 5px 5px, 5px 5px;
     background-repeat: no-repeat;
@@ -638,12 +640,11 @@ async function filtrarOnline() {
       .filter(function (item) { return item.status === 'online'; })
       .sort(function (a, b) { return b.viewers - a.viewers; })
       .map(function (item) { return item.canal; });
-    const confirmadosOffline = resultados.filter(function (item) { return item.status === 'offline'; }).length;
 
     if (confirmadosOnline.length > 0) {
       montarLives(confirmadosOnline, true);
-    } else if (confirmadosOffline === CANAIS.length) {
-      montarLives([], false);
+    } else {
+      montarLives(CANAIS, false);
     }
   } catch (e) {}
 }
@@ -995,76 +996,4 @@ def status(job_id):
         if not j:
             return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
         return jsonify({
-            "estado": j["estado"],
-            "msg": j["msg"],
-            "clipes": j["clipes"],
-            "diag": j.get("diag", ""),
-        })
-
-
-@app.route("/clipe/<job_id>/<int:n>")
-def clipe(job_id, n):
-    if n < 1:
-        return "Clipe inválido", 400
-    with JOBS_LOCK:
-        j = JOBS.get(job_id)
-        pasta = j.get("pasta") if j else ""
-    if not pasta:
-        return "Não encontrado", 404
-
-    arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
-    if not os.path.isfile(arq):
-        return "Not found", 404
-    return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
-
-
-@app.route("/zip/<job_id>")
-def baixar_zip(job_id):
-    with JOBS_LOCK:
-        j = JOBS.get(job_id)
-        pasta = j.get("pasta") if j else ""
-    if not pasta:
-        return "Não encontrado", 404
-
-    arquivos = listar_clipes(pasta)
-    if not arquivos:
-        return "Nenhum clipe disponível", 404
-
-    caminho_zip = os.path.join(BASE, f"{job_id}.zip")
-    with zipfile.ZipFile(caminho_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for f in arquivos:
-            z.write(os.path.join(pasta, f), f)
-
-    return send_file(caminho_zip, as_attachment=True, download_name="clipes.zip")
-
-
-@app.route("/terms")
-def terms():
-    return render_template_string(
-        PAGINA_LEGAL,
-        titulo="Termos de Serviço",
-        texto=(
-            "O Clipador de lives permite gerar clipes de transmissões ao vivo e facilitar "
-            "a publicação em plataformas conectadas mediante autorização do usuário. "
-            "Você concorda em utilizar o serviço apenas com conteúdo próprio ou devidamente "
-            "autorizado e em conformidade com as políticas das plataformas de destino."
-        ),
-    )
-
-
-@app.route("/privacy")
-def privacy():
-    return render_template_string(
-        PAGINA_LEGAL,
-        titulo="Política de Privacidade",
-        texto=(
-            "O Clipador de lives processa os links e arquivos de vídeo temporariamente "
-            "para gerar os clipes solicitados. Não vendemos dados pessoais a terceiros e "
-            "utilizamos credenciais ou autorizações apenas para as ações explicitamente "
-            "solicitadas por você na aplicação."
-        ),
-    )
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+            "estado": j["estado
