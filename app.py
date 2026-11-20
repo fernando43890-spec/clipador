@@ -33,16 +33,28 @@ PAGINA = """
     --texto: #f5f3ff;
     --mutado: #a69ec2;
   }
-  * { box-sizing: border-box; }
+
+  * {
+    box-sizing: border-box;
+  }
+
   body {
     margin: 0;
     min-height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
     color: var(--texto);
-    background: radial-gradient(ellipse at 50% -8%, rgba(139, 108, 246, 0.28), transparent 55%), var(--bg);
+    background:
+      radial-gradient(ellipse at 50% -8%, rgba(139, 108, 246, 0.28), transparent 55%),
+      var(--bg);
     padding-bottom: 40px;
   }
-  .wrap { max-width: 540px; margin: 0 auto; padding: 20px 16px 0; }
+
+  .wrap {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 20px 16px 0;
+  }
+
   .hero-card {
     background: var(--surface);
     border: 1px solid var(--borda-forte);
@@ -50,10 +62,33 @@ PAGINA = """
     padding: 20px 18px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   }
-  .hero-titulo { margin: 0; font-size: 1.4rem; font-weight: 800; line-height: 1.2; }
-  .hero-sub { margin: 8px 0 16px; color: var(--mutado); font-size: 0.9rem; line-height: 1.48; }
-  .campo { margin-bottom: 12px; }
-  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--mutado); margin-bottom: 6px; }
+
+  .hero-titulo {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .hero-sub {
+    margin: 8px 0 16px;
+    color: var(--mutado);
+    font-size: 0.9rem;
+    line-height: 1.48;
+  }
+
+  .campo {
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--mutado);
+    margin-bottom: 6px;
+  }
+
   input, select {
     width: 100%;
     padding: 14px;
@@ -64,6 +99,7 @@ PAGINA = """
     color: var(--texto);
     outline: none;
   }
+
   .btn-principal {
     width: 100%;
     padding: 15px 18px;
@@ -76,7 +112,12 @@ PAGINA = """
     color: #0d0a16;
     cursor: pointer;
   }
-  .btn-principal:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .btn-principal:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
   .caixa {
     background: var(--surface);
     border: 1px solid var(--borda);
@@ -85,6 +126,7 @@ PAGINA = """
     margin-top: 14px;
     font-size: 0.92rem;
   }
+
   #lista a {
     display: block;
     color: var(--texto);
@@ -96,6 +138,7 @@ PAGINA = """
     margin-top: 8px;
     font-size: 0.9rem;
   }
+
   #lista a:first-child {
     margin-top: 0;
     background: rgba(139, 108, 246, 0.22);
@@ -103,6 +146,7 @@ PAGINA = """
     color: var(--roxo-brilho);
     font-weight: 700;
   }
+
   .diag-topo {
     font-size: 0.76rem;
     text-transform: uppercase;
@@ -110,6 +154,7 @@ PAGINA = """
     color: var(--mutado);
     font-weight: 700;
   }
+
   pre {
     white-space: pre-wrap;
     word-break: break-word;
@@ -119,40 +164,6 @@ PAGINA = """
     margin: 8px 0 0;
     line-height: 1.45;
   }
-  .card-live {
-    display: none;
-    background: var(--surface);
-    border: 1px solid var(--borda-forte);
-    border-radius: 20px;
-    padding: 14px;
-    margin-top: 14px;
-  }
-  .card-topo {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    font-weight: 700;
-  }
-  .ponto {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #ff5a4d;
-    margin-right: 8px;
-  }
-  .tempo { color: var(--mutado); font-variant-numeric: tabular-nums; }
-  .player { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 12px; background: #000; }
-  .player-aviso { margin: 8px 0 0; font-size: 0.76rem; color: var(--mutado); }
-  .onda-box { position: relative; margin-top: 28px; }
-  .rotulos { position: absolute; top: -20px; left: 0; right: 0; height: 18px; }
-  .rotulos span { position: absolute; font-size: 0.75rem; font-weight: 700; color: var(--roxo-brilho); }
-  .onda { display: flex; align-items: center; gap: 2px; height: 56px; }
-  .onda i { flex: 1; border-radius: 2px; background: rgba(168, 130, 255, 0.28); }
-  .onda i.on { background: var(--roxo-brilho); }
-  .onda i.rec { background: var(--roxo); animation: piscar 1s infinite; }
-  @keyframes piscar { 50% { opacity: 0.35; } }
 </style>
 </head>
 <body>
@@ -179,19 +190,6 @@ PAGINA = """
       <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
     </section>
 
-    <section class="card-live" id="card-live">
-      <div class="card-topo">
-        <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
-        <span class="tempo" id="tempo">AO VIVO</span>
-      </div>
-      <iframe id="player" class="player" allowfullscreen allow="autoplay; fullscreen"></iframe>
-      <p class="player-aviso">Se o vídeo não aparecer aqui, a gravação ainda pode funcionar.</p>
-      <div class="onda-box">
-        <div class="rotulos" id="rotulos"></div>
-        <div class="onda" id="onda"></div>
-      </div>
-    </section>
-
     <div class="caixa" id="status">Aguardando link.</div>
     <div class="caixa" id="lista" style="display:none"></div>
     <div class="caixa">
@@ -202,87 +200,6 @@ PAGINA = """
 
 <script>
 let job = null;
-let totalMin = 5;
-let tIni = null;
-let timerId = null;
-let ultimoEmbed = "";
-const NB = 60;
-
-function montarOnda() {
-  let h = "";
-  for (let i = 0; i < NB; i++) {
-    const alt = 20 + Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.6)) * 80;
-    h += '<i style="height:' + alt.toFixed(0) + '%"></i>';
-  }
-  document.getElementById('onda').innerHTML = h;
-}
-
-function desenhar(clipes, gravando) {
-  const bars = document.querySelectorAll('#onda i');
-  const porClipe = NB / totalMin;
-  const ate = Math.min(NB, Math.round(clipes * porClipe));
-  const rec = gravando ? Math.min(NB, Math.round((clipes + 1) * porClipe)) : ate;
-  bars.forEach(function (b, i) {
-    b.className = i < ate ? 'on' : (i < rec ? 'rec' : '');
-  });
-  const passo = Math.max(1, Math.ceil(totalMin / 6));
-  let r = '';
-  for (let c = 1; c <= clipes && c <= totalMin; c++) {
-    if (c === 1 || c % passo === 0) {
-      r += '<span style="left:' + (((c - 1) / totalMin) * 100) + '%">#' + c + '</span>';
-    }
-  }
-  document.getElementById('rotulos').innerHTML = r;
-}
-
-function fmt(s) {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const x = s % 60;
-  const mm = h > 0 ? h + ':' + String(m).padStart(2, '0') : String(m);
-  return mm + ':' + String(x).padStart(2, '0');
-}
-
-function plataforma(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace('www.', '');
-    const partes = u.pathname.split('/').filter(Boolean);
-    if (host === 'kick.com' && partes[0]) {
-      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true&muted=true'};
-    }
-    if (host === 'twitch.tv' && partes[0]) {
-      return {nome: 'Twitch', embed: 'https://player.twitch.tv/?channel=' + partes[0] + '&parent=' + location.hostname + '&muted=true'};
-    }
-    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtu.be') {
-      let id = u.searchParams.get('v');
-      if (!id && host === 'youtu.be') { id = partes[0]; }
-      if (!id && partes[0] === 'live') { id = partes[1]; }
-      if (id) {
-        return {nome: 'YouTube', embed: 'https://www.youtube.com/embed/' + id + '?autoplay=1&mute=1'};
-      }
-    }
-  } catch (e) {}
-  return null;
-}
-
-function mostrarPreview() {
-  const url = document.getElementById('url').value.trim();
-  const card = document.getElementById('card-live');
-  const p = plataforma(url);
-  if (!p) {
-    card.style.display = 'none';
-    document.getElementById('player').src = 'about:blank';
-    ultimoEmbed = '';
-    return;
-  }
-  card.style.display = 'block';
-  document.getElementById('plat-nome').innerText = p.nome;
-  if (p.embed !== ultimoEmbed) {
-    document.getElementById('player').src = p.embed;
-    ultimoEmbed = p.embed;
-  }
-}
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -304,13 +221,6 @@ async function iniciar() {
       return;
     }
     job = d.id;
-    totalMin = parseInt(min);
-    tIni = Date.now();
-    if (timerId) { clearInterval(timerId); }
-    timerId = setInterval(function () {
-      document.getElementById('tempo').innerText = fmt(Math.floor((Date.now() - tIni) / 1000));
-    }, 1000);
-    desenhar(0, true);
     checar();
   } catch (e) {
     document.getElementById('status').innerText = 'Erro ao iniciar.';
@@ -333,18 +243,12 @@ async function checar() {
     }
     lista.innerHTML = h;
   }
-  const terminou = (d.estado === 'fim' || d.estado === 'erro');
-  desenhar(d.clipes, !terminou);
-  if (!terminou) {
+  if (d.estado !== 'fim' && d.estado !== 'erro') {
     setTimeout(checar, 3000);
   } else {
-    if (timerId) { clearInterval(timerId); }
     document.getElementById('btn-gravar').disabled = false;
   }
 }
-
-montarOnda();
-document.getElementById('url').addEventListener('input', mostrarPreview);
 </script>
 </body>
 </html>
@@ -403,3 +307,95 @@ def gravar(job_id, url, minutos):
         "ffmpeg", "-y",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
         "-rw_timeout", "15000000",
+        "-i", stream,
+        "-t", str(int(minutos) * 60),
+        "-c", "copy",
+        "-f", "segment", "-segment_time", str(SEG),
+        "-reset_timestamps", "1",
+        padrao,
+    ]
+    logf = open(log_ffmpeg, "w")
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
+    inicio = time.time()
+    while proc.poll() is None:
+        feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
+        job["clipes"] = max(0, len(feitos) - 1)
+        tam = tamanho_pasta(pasta)
+        job["msg"] = "A gravar... " + str(job["clipes"]) + " clipes prontos"
+        job["diag"] = (
+            "Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
+            + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500)
+        )
+        if time.time() - inicio > 60 and tam == 0:
+            proc.kill()
+            break
+        time.sleep(3)
+    logf.close()
+    feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
+    job["clipes"] = len(feitos)
+    if feitos and tamanho_pasta(pasta) > 0:
+        job["estado"] = "fim"
+        job["msg"] = "Pronto! " + str(len(feitos)) + " clipes gerados."
+    else:
+        job["estado"] = "erro"
+        job["msg"] = "Nenhum dado chegou em 60 segundos."
+        job["diag"] = ler_fim(log_ffmpeg, 800)
+
+
+@app.route("/")
+def inicio():
+    return render_template_string(PAGINA)
+
+
+@app.route("/iniciar", methods=["POST"])
+def iniciar():
+    dados = request.get_json() or {}
+    url = dados.get("url", "").strip()
+    minutos = int(dados.get("min", 5))
+    if not url.startswith("http"):
+        return jsonify({"id": ""}), 400
+    job_id = uuid.uuid4().hex[:8]
+    JOBS[job_id] = {"estado": "iniciando", "msg": "A iniciar...", "clipes": 0, "diag": ""}
+    threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
+    return jsonify({"id": job_id})
+
+
+@app.route("/status/<job_id>")
+def status(job_id):
+    j = JOBS.get(job_id)
+    if not j:
+        return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
+    return jsonify({
+        "estado": j["estado"],
+        "msg": j["msg"],
+        "clipes": j["clipes"],
+        "diag": j.get("diag", ""),
+    })
+
+
+@app.route("/clipe/<job_id>/<int:n>")
+def clipe(job_id, n):
+    j = JOBS.get(job_id)
+    if not j:
+        return "Não encontrado", 404
+    arq = os.path.join(j["pasta"], "clipe_%03d.mp4" % (n - 1))
+    if not os.path.exists(arq):
+        return "Não encontrado", 404
+    return send_file(arq, as_attachment=True, download_name="clipe_%d.mp4" % n)
+
+
+@app.route("/zip/<job_id>")
+def baixar_zip(job_id):
+    j = JOBS.get(job_id)
+    if not j:
+        return "Não encontrado", 404
+    caminho = os.path.join(BASE, job_id + ".zip")
+    with zipfile.ZipFile(caminho, "w") as z:
+        for f in sorted(os.listdir(j["pasta"])):
+            if f.startswith("clipe_"):
+                z.write(os.path.join(j["pasta"], f), f)
+    return send_file(caminho, as_attachment=True, download_name="clipes.zip")
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
