@@ -50,17 +50,16 @@ PAGINA = """
     background:
       radial-gradient(ellipse at 50% -8%, rgba(139, 108, 246, 0.28), transparent 55%),
       var(--bg);
-    padding-bottom: 36px;
+    padding-bottom: 40px;
   }
 
-  /* Barra superior fixa */
   .topbar {
     position: sticky;
     top: 0;
     z-index: 20;
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
-    background: rgba(7, 6, 11, 0.82);
+    background: rgba(7, 6, 11, 0.85);
     border-bottom: 1px solid var(--borda);
   }
 
@@ -82,7 +81,6 @@ PAGINA = """
     color: var(--texto);
     font-weight: 700;
     font-size: 1rem;
-    letter-spacing: -0.01em;
   }
 
   .logo-box {
@@ -96,7 +94,6 @@ PAGINA = """
     font-weight: 800;
     font-size: 0.9rem;
     color: #fff;
-    box-shadow: 0 6px 18px rgba(139, 108, 246, 0.35);
   }
 
   .btn-topo {
@@ -109,16 +106,14 @@ PAGINA = """
     text-decoration: none;
     border: none;
     cursor: pointer;
-    white-space: nowrap;
   }
 
   .wrap {
     max-width: 540px;
     margin: 0 auto;
-    padding: 20px 16px 0;
+    padding: 18px 16px 0;
   }
 
-  /* Card principal de entrada */
   .hero-card {
     background: var(--surface);
     border: 1px solid var(--borda-forte);
@@ -129,7 +124,7 @@ PAGINA = """
 
   .hero-titulo {
     margin: 0;
-    font-size: 1.45rem;
+    font-size: 1.4rem;
     font-weight: 800;
     letter-spacing: -0.02em;
     line-height: 1.2;
@@ -138,7 +133,7 @@ PAGINA = """
   .hero-sub {
     margin: 8px 0 16px;
     color: var(--mutado);
-    font-size: 0.92rem;
+    font-size: 0.9rem;
     line-height: 1.48;
   }
 
@@ -205,32 +200,17 @@ PAGINA = """
     color: #0d0a16;
     cursor: pointer;
     box-shadow: 0 10px 26px rgba(139, 108, 246, 0.35);
-    transition: transform 0.15s ease, background 0.2s ease;
   }
 
   .btn-principal:hover {
     background: var(--roxo-brilho);
-    transform: translateY(-1px);
-  }
-
-  .btn-principal:active {
-    transform: translateY(0);
   }
 
   .btn-principal:disabled {
     opacity: 0.55;
     cursor: not-allowed;
-    transform: none;
   }
 
-  .meta-linha {
-    margin-top: 12px;
-    font-size: 0.82rem;
-    color: var(--mutado);
-    text-align: center;
-  }
-
-  /* Caixas de status, clipes e diagnóstico */
   .caixa {
     background: var(--surface);
     border: 1px solid var(--borda);
@@ -284,8 +264,7 @@ PAGINA = """
     line-height: 1.45;
   }
 
-  /* Prévia visual no estilo da referência */
-  .preview-card {
+  .lives-box {
     margin-top: 18px;
     background: var(--surface);
     border: 1px solid var(--borda);
@@ -293,22 +272,22 @@ PAGINA = """
     padding: 16px;
   }
 
-  .preview-header {
+  .lives-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 700;
     margin-bottom: 12px;
   }
 
-  .live-dot {
+  .live-tag {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
   }
 
-  .live-dot::before {
+  .live-tag::before {
     content: "";
     width: 8px;
     height: 8px;
@@ -317,55 +296,128 @@ PAGINA = """
     box-shadow: 0 0 10px var(--vivo);
   }
 
-  .preview-tela {
-    background: linear-gradient(145deg, #1d1730, #0d0b14);
-    border: 1px solid var(--borda);
-    border-radius: 14px;
-    padding: 22px 16px;
-    text-align: center;
+  .live-tempo {
+    color: var(--mutado);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
   }
 
-  .preview-badge {
-    display: inline-block;
-    font-size: 0.75rem;
+  .tela-live {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #241942 0%, #110d1d 60%, #1c1333 100%);
+    border: 1px solid var(--borda-forte);
+    padding: 18px 14px;
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .tela-topo-badge {
+    align-self: flex-start;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #e9d5ff;
+    font-size: 0.72rem;
     font-weight: 700;
-    color: var(--roxo-brilho);
-    background: rgba(139, 108, 246, 0.15);
-    border: 1px solid var(--borda);
     padding: 4px 10px;
     border-radius: 999px;
-    margin-bottom: 8px;
   }
 
-  .preview-tela p {
-    margin: 0;
-    font-size: 0.88rem;
+  .tela-centro {
+    margin: 14px 0;
+  }
+
+  .tela-centro strong {
+    display: block;
+    font-size: 1rem;
+    color: #fff;
+  }
+
+  .tela-centro span {
+    font-size: 0.82rem;
     color: var(--mutado);
-    line-height: 1.45;
   }
 
-  .timeline {
-    margin-top: 14px;
+  .onda-marcadores {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
+    margin-top: 12px;
   }
 
-  .slot {
-    background: var(--surface-2);
-    border: 1px solid var(--borda-forte);
+  .marcador {
+    border: 1.5px solid var(--roxo-brilho);
+    background: rgba(139, 108, 246, 0.14);
     border-radius: 10px;
-    padding: 8px 6px;
+    padding: 7px 6px;
     text-align: center;
+    cursor: pointer;
   }
 
-  .slot strong {
+  .marcador span {
     display: block;
-    font-size: 0.82rem;
-    color: var(--texto);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
   }
 
-  .slot span {
+  .marcador small {
+    font-size: 0.68rem;
+    color: var(--roxo-brilho);
+  }
+
+  .grid-3 {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  .card-live {
+    background: var(--surface-2);
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    padding: 12px 10px;
+    text-align: left;
+    color: var(--texto);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 112px;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+  }
+
+  .card-live:hover {
+    border-color: var(--roxo-brilho);
+    transform: translateY(-2px);
+  }
+
+  .card-pill {
+    display: inline-block;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--roxo-brilho);
+    background: rgba(139, 108, 246, 0.16);
+    padding: 2px 7px;
+    border-radius: 999px;
+    margin-bottom: 6px;
+    width: fit-content;
+  }
+
+  .card-nome {
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .card-acao {
+    margin-top: 8px;
     font-size: 0.72rem;
     color: var(--mutado);
   }
@@ -411,7 +463,6 @@ PAGINA = """
       </div>
 
       <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
-      <div class="meta-linha">Segmentação automática a cada 60 segundos • Download individual ou ZIP</div>
     </section>
 
     <div class="caixa" id="status">Aguardando link.</div>
@@ -421,28 +472,53 @@ PAGINA = """
       <pre id="diag">-</pre>
     </div>
 
-    <section class="preview-card" aria-label="Como funciona">
-      <div class="preview-header">
-        <span class="live-dot">Captura em tempo real</span>
-        <span>Cortes de 01:00</span>
+    <section class="lives-box" aria-label="Lives e cortes">
+      <div class="lives-top">
+        <span class="live-tag">Kick • Lives</span>
+        <span class="live-tempo">01:00 / clipe</span>
       </div>
-      <div class="preview-tela">
-        <span class="preview-badge">Fluxo automático</span>
-        <p>O servidor captura o stream da live e divide o arquivo em blocos de 1 minuto prontos para baixar.</p>
+
+      <div class="tela-live">
+        <span class="tela-topo-badge">PRÉVIA DE CORTES AUTOMÁTICOS</span>
+        <div class="tela-centro">
+          <strong id="preview-titulo">Selecione um atalho ou cole o link acima</strong>
+          <span id="preview-sub">Cada minuto gravado vira um clipe MP4 separado pronto para baixar.</span>
+        </div>
+
+        <div class="onda-marcadores">
+          <div class="marcador" onclick="focarUrl()">
+            <span>00:00</span>
+            <small>Clipe 1</small>
+          </div>
+          <div class="marcador" onclick="focarUrl()">
+            <span>01:00</span>
+            <small>Clipe 2</small>
+          </div>
+          <div class="marcador" onclick="focarUrl()">
+            <span>02:00</span>
+            <small>Clipe 3</small>
+          </div>
+        </div>
       </div>
-      <div class="timeline">
-        <div class="slot">
-          <strong>00:00 – 01:00</strong>
-          <span>Clipe 1</span>
-        </div>
-        <div class="slot">
-          <strong>01:00 – 02:00</strong>
-          <span>Clipe 2</span>
-        </div>
-        <div class="slot">
-          <strong>02:00 – 03:00</strong>
-          <span>Clipe 3</span>
-        </div>
+
+      <div class="grid-3">
+        <button type="button" class="card-live" onclick="usarAtalho('Kick Live', 'https://kick.com/')">
+          <span class="card-pill">Kick</span>
+          <span class="card-nome">Canal Kick</span>
+          <span class="card-acao">Preencher link →</span>
+        </button>
+
+        <button type="button" class="card-live" onclick="usarAtalho('Twitch Live', 'https://www.twitch.tv/')">
+          <span class="card-pill">Twitch</span>
+          <span class="card-nome">Canal Twitch</span>
+          <span class="card-acao">Preencher link →</span>
+        </button>
+
+        <button type="button" class="card-live" onclick="usarAtalho('YouTube Live', 'https://www.youtube.com/')">
+          <span class="card-pill">YouTube</span>
+          <span class="card-nome">Live YouTube</span>
+          <span class="card-acao">Preencher link →</span>
+        </button>
       </div>
     </section>
 
@@ -451,6 +527,23 @@ PAGINA = """
 
 <script>
 let job = null;
+
+function focarUrl() {
+  const input = document.getElementById('url');
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => input.focus(), 250);
+}
+
+function usarAtalho(nome, linkBase) {
+  const input = document.getElementById('url');
+  if (!input.value.trim() || input.value.trim().endsWith('.com/') || input.value.trim().endsWith('.tv/')) {
+    input.value = linkBase;
+  }
+  document.getElementById('preview-titulo').innerText = nome + ' selecionado';
+  document.getElementById('preview-sub').innerText = 'Complete o link do canal ao vivo e clique em "Cortar meu vídeo".';
+  focarUrl();
+}
+
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
   const min = document.getElementById('min').value;
@@ -473,6 +566,7 @@ async function iniciar() {
     btn.disabled = false;
   }
 }
+
 async function checar() {
   if (!job) { return; }
   const r = await fetch('/status/' + job);
