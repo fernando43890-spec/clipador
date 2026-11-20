@@ -996,4 +996,75 @@ def status(job_id):
         if not j:
             return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
         return jsonify({
-            "estado": j["estado
+            "estado": j["estado"],
+            "msg": j["msg"],
+            "clipes": j["clipes"],
+            "diag": j.get("diag", ""),
+        })
+
+
+@app.route("/clipe/<job_id>/<int:n>")
+def clipe(job_id, n):
+    if n < 1:
+        return "Clipe inválido", 400
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        pasta = j.get("pasta") if j else ""
+    if not pasta:
+        return "Não encontrado", 404
+
+    arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
+    if not os.path.isfile(arq):
+        return "Não encontrado", 404
+    return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
+
+
+@app.route("/zip/<job_id>")
+def baixar_zip(job_id):
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        pasta = j.get("pasta") if j else ""
+    if not pasta:
+        return "Não encontrado", 404
+
+    arquivos = listar_clipes(pasta)
+    if not arquivos:
+        return "Nenhum clipe disponível", 404
+
+    caminho_zip = os.path.join(BASE, f"{job_id}.zip")
+    with zipfile.ZipFile(caminho_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for f in arquivos:
+            z.write(os.path.join(pasta, f), f)
+
+    return send_file(caminho_zip, as_attachment=True, download_name="clipes.zip")
+
+
+@app.route("/terms")
+def terms():
+    return render_template_string(
+        PAGINA_LEGAL,
+        titulo="Termos de Serviço",
+        texto=(
+            "O Clipador de lives permite gerar clipes de transmissões ao vivo e facilitar "
+            "a publicação em plataformas conectadas mediante autorização do usuário. "
+            "Você concorda em utilizar o serviço apenas com conteúdo próprio ou devidamente "
+            "autorizado e em conformidade com as políticas das plataformas de destino."
+        ),
+    )
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template_string(
+        PAGINA_LEGAL,
+        titulo="Política de Privacidade",
+        texto=(
+            "O Clipador de lives processa os links e arquivos de vídeo temporariamente "
+            "para gerar os clipes solicitados. Não vendemos dados pessoais a terceiros e "
+            "utilizamos credenciais ou autorizações apenas para as ações explicitamente "
+            "solicitadas por você na aplicação."
+        ),
+    )
+
+
+if __
