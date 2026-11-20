@@ -15,7 +15,7 @@ SEG = 60
 
 PAGINA = """
 <!doctype html>
-<html lang="pt">
+<html lang="pt-br">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -32,10 +32,15 @@ PAGINA = """
     --roxo-brilho: #a488ff;
     --texto: #f5f3ff;
     --mutado: #a69ec2;
+    --vivo: #ef4444;
   }
 
   * {
     box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
   }
 
   body {
@@ -49,10 +54,66 @@ PAGINA = """
     padding-bottom: 40px;
   }
 
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    background: rgba(7, 6, 11, 0.85);
+    border-bottom: 1px solid var(--borda);
+  }
+
+  .topbar-inner {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--texto);
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .logo-box {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #a855f7, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.9rem;
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(139, 108, 246, 0.35);
+  }
+
+  .btn-topo {
+    background: var(--roxo);
+    color: #0d0a16;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 8px 14px;
+    border-radius: 999px;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+  }
+
   .wrap {
     max-width: 540px;
     margin: 0 auto;
-    padding: 20px 16px 0;
+    padding: 18px 16px 0;
   }
 
   .hero-card {
@@ -65,16 +126,21 @@ PAGINA = """
 
   .hero-titulo {
     margin: 0;
-    font-size: 1.4rem;
+    font-size: 1.45rem;
     font-weight: 800;
+    letter-spacing: -0.02em;
     line-height: 1.2;
   }
 
   .hero-sub {
     margin: 8px 0 16px;
     color: var(--mutado);
-    font-size: 0.9rem;
+    font-size: 0.92rem;
     line-height: 1.48;
+  }
+
+  .hero-sub strong {
+    color: var(--texto);
   }
 
   .campo {
@@ -98,6 +164,30 @@ PAGINA = """
     background: var(--input);
     color: var(--texto);
     outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  input::placeholder {
+    color: #8c84a8;
+  }
+
+  input:focus, select:focus {
+    border-color: var(--roxo-brilho);
+    box-shadow: 0 0 0 3px rgba(139, 108, 246, 0.22);
+  }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--mutado) 50%),
+      linear-gradient(135deg, var(--mutado) 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) calc(50% - 2px),
+      calc(100% - 13px) calc(50% - 2px);
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 36px;
   }
 
   .btn-principal {
@@ -111,11 +201,23 @@ PAGINA = """
     background: var(--roxo);
     color: #0d0a16;
     cursor: pointer;
+    box-shadow: 0 10px 26px rgba(139, 108, 246, 0.35);
+    transition: transform 0.15s ease, background 0.2s ease;
+  }
+
+  .btn-principal:hover {
+    background: var(--roxo-brilho);
+    transform: translateY(-1px);
+  }
+
+  .btn-principal:active {
+    transform: translateY(0);
   }
 
   .btn-principal:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+    transform: none;
   }
 
   .caixa {
@@ -127,11 +229,10 @@ PAGINA = """
     font-size: 0.92rem;
   }
 
-  .card-live{background:var(--surface);border:1px solid var(--borda-forte);border-radius:20px;padding:14px;margin-top:14px}
-  .card-topo{display:flex;justify-content:space-between;margin-bottom:10px;font-weight:700}
-  .ponto{display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff5a4d;margin-right:8px}
-  .player{width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
-  .player-aviso{margin:8px 0 0;font-size:.76rem;color:var(--mutado)}
+  #status {
+    font-weight: 600;
+    color: var(--texto);
+  }
 
   #lista a {
     display: block;
@@ -143,6 +244,7 @@ PAGINA = """
     border: 1px solid var(--borda);
     margin-top: 8px;
     font-size: 0.9rem;
+    font-weight: 500;
   }
 
   #lista a:first-child {
@@ -170,17 +272,94 @@ PAGINA = """
     margin: 8px 0 0;
     line-height: 1.45;
   }
+
+  /* Classes adicionadas pelo usuário */
+  .card-live {
+    background: var(--surface);
+    border: 1px solid var(--borda-forte);
+    border-radius: 20px;
+    padding: 14px;
+    margin-top: 14px;
+  }
+  .card-topo {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .ponto {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ff5a4d;
+    margin-right: 8px;
+  }
+  .player {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border: 0;
+    border-radius: 12px;
+    background: #000;
+  }
+  .player-aviso {
+    margin: 8px 0 0;
+    font-size: .76rem;
+    color: var(--mutado);
+  }
+  .live-item {
+    margin-top: 12px;
+  }
+  .live-topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  .btn-mini {
+    background: var(--roxo);
+    color: #0d0a16;
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-weight: 700;
+    font-size: .8rem;
+    cursor: pointer;
+    transition: filter 0.2s ease;
+  }
+  .btn-mini:hover {
+    filter: brightness(1.1);
+  }
+
+  .aviso {
+    color: #7c7496;
+    font-size: 0.78rem;
+    text-align: center;
+    margin: 18px 0 0;
+    line-height: 1.45;
+  }
 </style>
 </head>
 <body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#">
+        <span class="logo-box">CL</span>
+        <span>Clipador de lives</span>
+      </a>
+      <a class="btn-topo" href="#url">Colar link</a>
+    </div>
+  </header>
+
   <main class="wrap">
     <section class="hero-card">
-      <h1 class="hero-titulo">Clipador de lives</h1>
-      <p class="hero-sub">Cole o link da live, escolha a duração e baixe os clipes de 1 minuto.</p>
+      <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
+      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong>, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
 
       <div class="campo">
         <label for="url">Link da live</label>
-        <input id="url" type="url" placeholder="Cole o link da live (YouTube, Kick, Twitch...)">
+        <input id="url" type="url" placeholder="Cole o link da live (Kick, Twitch, YouTube...)">
       </div>
 
       <div class="campo">
@@ -196,6 +375,7 @@ PAGINA = """
       <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
     </section>
 
+    <!-- Seção de preview individual adicionada pelo usuário -->
     <section class="card-live" id="card-live" style="display:none">
       <div class="card-topo">
         <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
@@ -211,11 +391,20 @@ PAGINA = """
       <span class="diag-topo">Diagnóstico</span>
       <pre id="diag">-</pre>
     </div>
+
+    <!-- Seção de lives fixas adicionada pelo usuário -->
+    <section class="caixa" id="lives-box">
+      <span class="diag-topo">Lives agora</span>
+      <div id="lives"></div>
+    </section>
+
+    <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
   </main>
 
 <script>
 let job = null;
 
+// Lógica de preview individual do input
 function plataforma(url) {
   try {
     const u = new URL(url);
@@ -250,6 +439,41 @@ function mostrarPreview() {
 }
 document.getElementById('url').addEventListener('input', mostrarPreview);
 
+// Lógica das lives fixas (Canais e funções adicionadas pelo usuário)
+const CANAIS = [
+  {nome: 'Coringa', plat: 'kick', canal: 'coringa'},
+  {nome: 'Gabepeixe', plat: 'kick', canal: 'gabepeixe'}
+];
+
+function embedDe(c) {
+  if (c.plat === 'twitch') {
+    return 'https://player.twitch.tv/?channel=' + c.canal + '&parent=' + location.hostname + '&muted=true';
+  }
+  return 'https://player.kick.com/' + c.canal + '?autoplay=true&muted=true';
+}
+
+function linkDe(c) {
+  return (c.plat === 'twitch' ? 'https://twitch.tv/' : 'https://kick.com/') + c.canal;
+}
+
+function clipar(i) {
+  document.getElementById('url').value = linkDe(CANAIS[i]);
+  mostrarPreview();
+  window.scrollTo(0, 0);
+}
+
+function montarLives() {
+  let h = '';
+  CANAIS.forEach(function (c, i) {
+    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+      '</span><button class="btn-mini" onclick="clipar(' + i + ')">Usar esta live</button></div>' +
+      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
+  });
+  document.getElementById('lives').innerHTML = h;
+}
+montarLives();
+
+// Funções de gravação e status (Mantidas intactas)
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
   const min = document.getElementById('min').value;
@@ -298,8 +522,7 @@ async function checar() {
     document.getElementById('btn-gravar').disabled = false;
   }
 }
-</script>
-</body>
+</script></body>
 </html>
 """
 
