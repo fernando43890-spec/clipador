@@ -21,7 +21,7 @@ TIKTOK = [
     {"nome": "Uriel", "usuario": "uriel.wq"},
     {"nome": "Levelup", "usuario": "levelup_007"},
 ]
-TT_CACHE = {"hora": 0, "dados": []}
+TT_CACHE = {"hora": 0, "dados": [], "rodando": False}
 TT_LOCK = threading.Lock()
 TT_TTL = 60
 
@@ -632,6 +632,10 @@ setInterval(filtrarOnline, 30000);
 
 let assinaturaTT = '';
 
+function esc(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function usarTikTok(usuario) {
   document.getElementById('url').value = 'https://www.tiktok.com/@' + usuario + '/live';
   mostrarPreview();
@@ -656,21 +660,32 @@ function montarTikTok(lista) {
       '<div class="live-topo"><span><span class="ponto"' + (incerto ? ' style="background:#7c7496"' : '') + '></span>' + c.nome + info + '</span>' +
       '<button class="btn-mini" data-usuario="' + c.usuario + '" onclick="usarTikTok(this.dataset.usuario)">Usar esta live</button></div>' +
       '<a class="tt-link" href="https://www.tiktok.com/@' + c.usuario + '/live" target="_blank" rel="noopener">Abrir no TikTok ↗</a>' +
+      (incerto && c.detalhe ? '<p class="tt-vazio">Motivo: ' + esc(c.detalhe) + '</p>' : '') +
       '</div></div>';
   });
   box.innerHTML = h;
 }
 
 async function carregarTikTok() {
+  let proximo = 60000;
   try {
     const r = await fetch('/api/tiktok');
-    if (!r.ok) { return; }
-    const dados = await r.json();
-    montarTikTok(dados);
-  } catch (e) {}
+    if (!r.ok) {
+      proximo = 5000;
+    } else {
+      const d = await r.json();
+      if (!d.pronto) {
+        proximo = 3000;
+      } else {
+        montarTikTok(d.dados);
+      }
+    }
+  } catch (e) {
+    proximo = 5000;
+  }
+  setTimeout(carregarTikTok, proximo);
 }
 carregarTikTok();
-setInterval(carregarTikTok, 60000);
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -817,22 +832,59 @@ def normalizar_url(url):
 
 
 def checar_tiktok(usuario):
-    """True = ao vivo, False = offline, None = não deu para saber."""
+    """Retorna (estado, detalhe). estado: True = ao vivo, False = offline, None = incerto."""
     url = f"https://www.tiktok.com/@{usuario}/live"
     try:
         r = subprocess.run(
             ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url],
-            capture_output=True, text=True, timeout=40,
+            capture_output=True, text=True, timeout=25,
         )
-    except Exception:
-        return None
+    except subprocess.TimeoutExpired:
+        return None, "o yt-dlp demorou demais para responder"
+    except FileNotFoundError:
+        return None, "yt-dlp não encontrado no servidor"
+    except Exception as e:
+        return None, str(e)[-200:]
     links = [l for l in r.stdout.strip().splitlines() if l.strip().startswith("http")]
     if r.returncode == 0 and links:
-        return True
-    erro = (r.stderr or "").lower()
-    if "not currently live" in erro or "not live" in erro or "offline" in erro:
-        return False
-    return None
+        return True, ""
+    erro = (r.stderr or "").strip()
+    baixo = erro.lower()
+    if "not currently live" in baixo or "not live" in baixo or "offline" in baixo:
+        return False, ""
+    return None, erro[-200:] or "sem mensagem do yt-dlp"
+
+
+def atualizar_tiktok():
+    resultados = [(None, "")] * len(TIKTOK)
+
+    def worker(i, usuario):
+        resultados[i] = checar_tiktok(usuario)
+
+    try:
+        threads = [
+            threading.Thread(target=worker, args=(i, c["usuario"]), daemon=True)
+            for i, c in enumerate(TIKTOK)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=40)
+        dados = [
+            {
+                "nome": c["nome"],
+                "usuario": c["usuario"],
+                "online": resultados[i][0],
+                "detalhe": resultados[i][1],
+            }
+            for i, c in enumerate(TIKTOK)
+        ]
+        with TT_LOCK:
+            TT_CACHE["dados"] = dados
+            TT_CACHE["hora"] = time.time()
+    finally:
+        with TT_LOCK:
+            TT_CACHE["rodando"] = False
 
 
 def gravar(job_id, url, minutos):
@@ -1006,32 +1058,16 @@ def iniciar():
 
 @app.route("/api/tiktok")
 def api_tiktok():
+    iniciar_thread = False
     with TT_LOCK:
-        if TT_CACHE["dados"] and time.time() - TT_CACHE["hora"] < TT_TTL:
-            return jsonify(TT_CACHE["dados"])
-
-    resultados = [None] * len(TIKTOK)
-
-    def worker(i, usuario):
-        resultados[i] = checar_tiktok(usuario)
-
-    threads = [
-        threading.Thread(target=worker, args=(i, c["usuario"]), daemon=True)
-        for i, c in enumerate(TIKTOK)
-    ]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=50)
-
-    dados = [
-        {"nome": c["nome"], "usuario": c["usuario"], "online": resultados[i]}
-        for i, c in enumerate(TIKTOK)
-    ]
-    with TT_LOCK:
-        TT_CACHE["dados"] = dados
-        TT_CACHE["hora"] = time.time()
-    return jsonify(dados)
+        velho = time.time() - TT_CACHE["hora"] >= TT_TTL
+        if velho and not TT_CACHE["rodando"]:
+            TT_CACHE["rodando"] = True
+            iniciar_thread = True
+        dados = list(TT_CACHE["dados"])
+    if iniciar_thread:
+        threading.Thread(target=atualizar_tiktok, daemon=True).start()
+    return jsonify({"pronto": bool(dados), "dados": dados})
 
 
 @app.route("/status/<job_id>")
