@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 import zipfile
+from urllib.parse import urlparse
 from flask import Flask, request, send_file, render_template_string, jsonify
 
 app = Flask(__name__)
@@ -13,6 +14,15 @@ os.makedirs(BASE, exist_ok=True)
 JOBS = {}
 JOBS_LOCK = threading.Lock()
 SEG = 60
+
+TIKTOK = [
+    {"nome": "Isaffonti", "usuario": "isaffonti"},
+    {"nome": "Fluxo Rajah", "usuario": "fluxo_rajah"},
+    {"nome": "Uriel", "usuario": "uriel.wq"},
+]
+TT_CACHE = {"hora": 0, "dados": []}
+TT_LOCK = threading.Lock()
+TT_TTL = 60
 
 
 PAGINA = """
@@ -374,6 +384,27 @@ PAGINA = """
     margin-left: 8px;
   }
 
+  .tt-card {
+    background: var(--surface-2);
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .tt-card .live-topo {
+    margin-bottom: 6px;
+  }
+  .tt-link {
+    color: var(--kick-brilho);
+    font-size: .82rem;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .tt-vazio {
+    margin: 10px 0 0;
+    color: var(--mutado);
+    font-size: .85rem;
+  }
+
   .aviso {
     color: #7c7496;
     font-size: 0.78rem;
@@ -428,7 +459,7 @@ PAGINA = """
         <span>AO VIVO</span>
       </div>
       <iframe id="player" class="player" allowfullscreen allow="autoplay; fullscreen"></iframe>
-      <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
+      <p class="player-aviso" id="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
     </section>
 
     <div class="caixa" id="status">Aguardando link.</div>
@@ -441,6 +472,11 @@ PAGINA = """
     <section class="caixa" id="lives-box">
       <span class="diag-topo">Lives agora na Kick</span>
       <div id="lives"></div>
+    </section>
+
+    <section class="caixa" id="tt-box">
+      <span class="diag-topo">Lives agora no TikTok</span>
+      <div id="lives-tt"><p class="tt-vazio">Verificando...</p></div>
     </section>
 
     <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
@@ -459,6 +495,9 @@ function plataforma(url) {
     if ((host === 'kick.com' || host === 'kzl.ink') && partes[0]) {
       return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
     }
+    if ((host === 'tiktok.com' || host.endsWith('.tiktok.com')) && partes[0] && partes[0].charAt(0) === '@') {
+      return {nome: 'TikTok', embed: ''};
+    }
   } catch (e) {}
   return null;
 }
@@ -475,6 +514,17 @@ function mostrarPreview() {
   }
   card.style.display = 'block';
   document.getElementById('plat-nome').innerText = p.nome;
+  const playerEl = document.getElementById('player');
+  const avisoEl = document.getElementById('player-aviso');
+  if (!p.embed) {
+    playerEl.style.display = 'none';
+    playerEl.src = 'about:blank';
+    ultimoEmbed = '';
+    avisoEl.innerText = 'O TikTok não permite player aqui, mas a gravação funciona normalmente.';
+    return;
+  }
+  playerEl.style.display = '';
+  avisoEl.innerText = 'Se o vídeo não aparecer, a gravação ainda pode funcionar.';
   if (p.embed !== ultimoEmbed) {
     document.getElementById('player').src = p.embed;
     ultimoEmbed = p.embed;
@@ -578,6 +628,48 @@ async function filtrarOnline() {
 }
 filtrarOnline();
 setInterval(filtrarOnline, 30000);
+
+let assinaturaTT = '';
+
+function usarTikTok(usuario) {
+  document.getElementById('url').value = 'https://www.tiktok.com/@' + usuario + '/live';
+  mostrarPreview();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function montarTikTok(lista) {
+  const box = document.getElementById('lives-tt');
+  const visiveis = lista.filter(function (c) { return c.online !== false; });
+  const assinatura = visiveis.map(function (c) { return c.usuario + ':' + c.online; }).join('|');
+  if (assinatura === assinaturaTT) { return; }
+  assinaturaTT = assinatura;
+  if (visiveis.length === 0) {
+    box.innerHTML = '<p class="tt-vazio">Nenhuma live do TikTok no ar agora.</p>';
+    return;
+  }
+  let h = '';
+  visiveis.forEach(function (c) {
+    const incerto = c.online === null;
+    const info = incerto ? '<span class="viewers">status incerto</span>' : '';
+    h += '<div class="live-item"><div class="tt-card">' +
+      '<div class="live-topo"><span><span class="ponto"' + (incerto ? ' style="background:#7c7496"' : '') + '></span>' + c.nome + info + '</span>' +
+      '<button class="btn-mini" data-usuario="' + c.usuario + '" onclick="usarTikTok(this.dataset.usuario)">Usar esta live</button></div>' +
+      '<a class="tt-link" href="https://www.tiktok.com/@' + c.usuario + '/live" target="_blank" rel="noopener">Abrir no TikTok ↗</a>' +
+      '</div></div>';
+  });
+  box.innerHTML = h;
+}
+
+async function carregarTikTok() {
+  try {
+    const r = await fetch('/api/tiktok');
+    if (!r.ok) { return; }
+    const dados = await r.json();
+    montarTikTok(dados);
+  } catch (e) {}
+}
+carregarTikTok();
+setInterval(carregarTikTok, 60000);
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -709,6 +801,37 @@ def extrair_stream(url):
 
     erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
     return None, {}, erro_msg[-700:]
+
+
+def normalizar_url(url):
+    try:
+        u = urlparse(url)
+        host = (u.hostname or "").replace("www.", "")
+        partes = [p for p in u.path.split("/") if p]
+        if host.endswith("tiktok.com") and partes and partes[0].startswith("@"):
+            return f"https://www.tiktok.com/{partes[0]}/live"
+    except Exception:
+        pass
+    return url
+
+
+def checar_tiktok(usuario):
+    """True = ao vivo, False = offline, None = não deu para saber."""
+    url = f"https://www.tiktok.com/@{usuario}/live"
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url],
+            capture_output=True, text=True, timeout=40,
+        )
+    except Exception:
+        return None
+    links = [l for l in r.stdout.strip().splitlines() if l.strip().startswith("http")]
+    if r.returncode == 0 and links:
+        return True
+    erro = (r.stderr or "").lower()
+    if "not currently live" in erro or "not live" in erro or "offline" in erro:
+        return False
+    return None
 
 
 def gravar(job_id, url, minutos):
@@ -858,6 +981,8 @@ def iniciar():
     if not (url.startswith("http://") or url.startswith("https://")):
         return jsonify({"id": "", "erro": "Link inválido."}), 400
 
+    url = normalizar_url(url)
+
     try:
         minutos = int(dados.get("min", 5))
     except (TypeError, ValueError):
@@ -876,6 +1001,36 @@ def iniciar():
 
     threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
     return jsonify({"id": job_id})
+
+
+@app.route("/api/tiktok")
+def api_tiktok():
+    with TT_LOCK:
+        if TT_CACHE["dados"] and time.time() - TT_CACHE["hora"] < TT_TTL:
+            return jsonify(TT_CACHE["dados"])
+
+    resultados = [None] * len(TIKTOK)
+
+    def worker(i, usuario):
+        resultados[i] = checar_tiktok(usuario)
+
+    threads = [
+        threading.Thread(target=worker, args=(i, c["usuario"]), daemon=True)
+        for i, c in enumerate(TIKTOK)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=50)
+
+    dados = [
+        {"nome": c["nome"], "usuario": c["usuario"], "online": resultados[i]}
+        for i, c in enumerate(TIKTOK)
+    ]
+    with TT_LOCK:
+        TT_CACHE["dados"] = dados
+        TT_CACHE["hora"] = time.time()
+    return jsonify(dados)
 
 
 @app.route("/status/<job_id>")
