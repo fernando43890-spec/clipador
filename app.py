@@ -5,15 +5,25 @@ import threading
 import time
 import uuid
 import zipfile
-from flask import Flask, request, send_file, render_template_string, jsonify
 
+from flask import Flask, jsonify, render_template_string, request, send_file
+
+# ==============================================================================
+# CONFIGURAÇÃO INICIAL
+# ==============================================================================
 app = Flask(__name__)
+
 BASE = "/tmp/clipador" if os.path.exists("/tmp") else "."
 os.makedirs(BASE, exist_ok=True)
+
+SEG = 60
 JOBS = {}
 JOBS_LOCK = threading.Lock()
-SEG = 60
 
+
+# ==============================================================================
+# TEMPLATES HTML
+# ==============================================================================
 PAGINA = """
 <!doctype html>
 <html lang="pt-br">
@@ -284,12 +294,14 @@ PAGINA = """
     padding: 14px;
     margin-top: 14px;
   }
+
   .card-topo {
     display: flex;
     justify-content: space-between;
     margin-bottom: 10px;
     font-weight: 700;
   }
+
   .ponto {
     display: inline-block;
     width: 10px;
@@ -298,6 +310,7 @@ PAGINA = """
     background: var(--vivo);
     margin-right: 8px;
   }
+
   .player {
     width: 100%;
     aspect-ratio: 16/9;
@@ -305,6 +318,7 @@ PAGINA = """
     border-radius: 12px;
     background: #000;
   }
+
   .player-espera {
     width: 100%;
     aspect-ratio: 16/9;
@@ -321,11 +335,13 @@ PAGINA = """
     font-size: 0.85rem;
     transition: border-color 0.2s ease, background 0.2s ease;
   }
+
   .player-espera:hover {
     border-color: var(--kick-verde);
     background: #0e0c17;
     color: var(--texto);
   }
+
   .btn-play-live {
     background: var(--kick-verde);
     color: #0d0a16;
@@ -336,6 +352,7 @@ PAGINA = """
     font-size: 0.82rem;
     cursor: pointer;
   }
+
   .player-aviso {
     margin: 8px 0 0;
     font-size: .76rem;
@@ -345,6 +362,7 @@ PAGINA = """
   .live-item {
     margin-top: 12px;
   }
+
   .live-item.destaque {
     background: var(--surface-2);
     border: 2px solid var(--kick-verde);
@@ -353,9 +371,11 @@ PAGINA = """
     margin-bottom: 14px;
     box-shadow: 0 0 0 1px rgba(0, 255, 56, 0.25), 0 12px 30px rgba(0, 255, 56, 0.22);
   }
+
   .live-item.destaque .player {
     border: 1px solid rgba(0, 255, 56, 0.35);
   }
+
   .badge-top {
     display: inline-flex;
     flex-direction: column;
@@ -371,23 +391,27 @@ PAGINA = """
     box-shadow: 0 4px 14px rgba(0, 255, 56, 0.35);
     width: 100%;
   }
+
   .badge-main-text {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 0.82rem;
   }
+
   .badge-sub-text {
     font-size: 0.74rem;
     opacity: 0.9;
     font-weight: 700;
   }
+
   .viewers-tag {
     font-size: 0.78rem;
     color: var(--mutado);
     font-weight: 500;
     margin-left: 6px;
   }
+
   .live-topo {
     display: flex;
     justify-content: space-between;
@@ -395,11 +419,13 @@ PAGINA = """
     margin-bottom: 8px;
     font-weight: 700;
   }
+
   .live-acoes {
     display: flex;
     align-items: center;
     gap: 6px;
   }
+
   .btn-mini {
     background: var(--kick-verde);
     color: #0d0a16;
@@ -411,16 +437,19 @@ PAGINA = """
     cursor: pointer;
     transition: filter 0.2s ease, transform 0.15s ease;
   }
+
   .btn-mini.secundario {
     background: var(--surface-2);
     color: var(--texto);
     border: 1px solid var(--borda-forte);
   }
+
   .live-item.destaque .btn-mini {
     background: var(--kick-brilho);
     padding: 9px 14px;
     box-shadow: 0 4px 14px rgba(0, 255, 56, 0.35);
   }
+
   .btn-mini:hover {
     filter: brightness(1.1);
     transform: translateY(-1px);
@@ -433,6 +462,7 @@ PAGINA = """
     margin: 18px 0 0;
     line-height: 1.45;
   }
+
   .aviso a {
     color: var(--mutado);
     text-decoration: underline;
@@ -506,7 +536,16 @@ PAGINA = """
 let job = null;
 let ultimoClipesRenderizado = -1;
 let ultimoJobRenderizado = null;
+let ultimoEmbed = '';
 const livesCarregadas = new Set();
+
+const CANAIS = [
+  {nome: 'Bak', plat: 'kick', canal: 'bak'},
+  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'},
+  {nome: 'Brabox', plat: 'kick', canal: 'brabox'},
+  {nome: 'Gabe Peixe', plat: 'kick', canal: 'gabepeixe'},
+  {nome: 'Coringa', plat: 'kick', canal: 'coringa'}
+];
 
 function plataforma(url) {
   try {
@@ -520,7 +559,6 @@ function plataforma(url) {
   return null;
 }
 
-let ultimoEmbed = '';
 function mostrarPreview() {
   const p = plataforma(document.getElementById('url').value.trim());
   const card = document.getElementById('card-live');
@@ -538,14 +576,6 @@ function mostrarPreview() {
   }
 }
 document.getElementById('url').addEventListener('input', mostrarPreview);
-
-const CANAIS = [
-  {nome: 'Bak', plat: 'kick', canal: 'bak'},
-  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'},
-  {nome: 'Brabox', plat: 'kick', canal: 'brabox'},
-  {nome: 'Gabe Peixe', plat: 'kick', canal: 'gabepeixe'},
-  {nome: 'Coringa', plat: 'kick', canal: 'coringa'}
-];
 
 function embedDe(c, autoplay) {
   return 'https://player.kick.com/' + c.canal + '?autoplay=' + (autoplay ? 'true' : 'false');
@@ -569,502 +599,4 @@ function clipar(i) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function darPlayLive(canal) {
-  livesCarregadas.add(canal);
-  const slot = document.getElementById('player-slot-' + canal);
-  if (!slot) { return; }
-  slot.innerHTML = '<iframe class="player" src="https://player.kick.com/' + canal + '?autoplay=true" allowfullscreen allow="autoplay; fullscreen"></iframe>';
-  const btn = document.getElementById('btn-play-' + canal);
-  if (btn) { btn.style.display = 'none'; }
-}
-
-function montarLives(lista, comDestaque) {
-  let h = '';
-  lista.forEach(function (c, pos) {
-    const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
-    const viewers = c.viewers || 0;
-    const isTop = comDestaque && pos === 0 && viewers > 0;
-    const textoViewers = formatarViewers(viewers);
-    const deveCarregar = isTop || livesCarregadas.has(c.canal);
-
-    h += '<div class="live-item' + (isTop ? ' destaque' : '') + '">';
-    if (isTop) {
-      h += '<div class="badge-top">' +
-           '<div class="badge-main-text">🔥 Assistindo agora</div>' +
-           '<div class="badge-sub-text">Live mais popular com ' + textoViewers + ' espectadores</div>' +
-           '</div>';
-    }
-    h += '<div class="live-topo"><span><span class="ponto"></span>' + c.nome +
-      (!isTop && textoViewers ? '<span class="viewers-tag">(' + textoViewers + ' espectadores)</span>' : '') +
-      '</span><div class="live-acoes">';
-    if (!deveCarregar) {
-      h += '<button id="btn-play-' + c.canal + '" class="btn-mini secundario" onclick="darPlayLive(\'' + c.canal + '\')">Play</button>';
-    }
-    h += '<button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div></div>' +
-      '<div id="player-slot-' + c.canal + '">';
-    if (deveCarregar) {
-      h += '<iframe class="player" src="' + embedDe(c, isTop) + '" allowfullscreen allow="autoplay; fullscreen"></iframe>';
-    } else {
-      h += '<div class="player-espera" onclick="darPlayLive(\'' + c.canal + '\')"><button type="button" class="btn-play-live">▶ Dar play na live</button><span>Carrega somente ao clicar</span></div>';
-    }
-    h += '</div></div>';
-  });
-  document.getElementById('lives').innerHTML = h;
-}
-montarLives(CANAIS, false);
-
-async function filtrarOnline() {
-  try {
-    const resultados = await Promise.all(
-      CANAIS.map(async function (c) {
-        try {
-          const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
-          if (!r.ok) { return {canal: c, status: 'incerto', viewers: 0}; }
-          const d = await r.json();
-          if (d && 'livestream' in d) {
-            const online = Boolean(d.livestream);
-            const viewers = online ? Number(d.livestream.viewer_count || d.livestream.viewers || 0) : 0;
-            return {
-              canal: Object.assign({}, c, {viewers: viewers}),
-              status: online ? 'online' : 'offline',
-              viewers: viewers
-            };
-          }
-          return {canal: c, status: 'incerto', viewers: 0};
-        } catch (e) {
-          return {canal: c, status: 'incerto', viewers: 0};
-        }
-      })
-    );
-    const confirmadosOnline = resultados
-      .filter(function (item) { return item.status === 'online'; })
-      .sort(function (a, b) { return b.viewers - a.viewers; })
-      .map(function (item) { return item.canal; });
-
-    if (confirmadosOnline.length > 0) {
-      montarLives(confirmadosOnline, true);
-    } else {
-      montarLives(CANAIS, false);
-    }
-  } catch (e) {}
-}
-filtrarOnline();
-setInterval(filtrarOnline, 30000);
-
-async function iniciar() {
-  const url = document.getElementById('url').value.trim();
-  const min = document.getElementById('min').value;
-  const btn = document.getElementById('btn-gravar');
-  if (!url) { return; }
-  btn.disabled = true;
-  ultimoClipesRenderizado = -1;
-  document.getElementById('lista').style.display = 'none';
-  document.getElementById('lista').innerHTML = '';
-  document.getElementById('status').innerText = 'Iniciando...';
-  try {
-    const r = await fetch('/iniciar', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({url: url, min: min})
-    });
-    const d = await r.json();
-    if (!r.ok || !d.id) {
-      document.getElementById('status').innerText = d.erro || 'Link inválido.';
-      btn.disabled = false;
-      return;
-    }
-    job = d.id;
-    ultimoJobRenderizado = job;
-    checar();
-  } catch (e) {
-    document.getElementById('status').innerText = 'Erro ao iniciar.';
-    btn.disabled = false;
-  }
-}
-
-function atualizarListaClipes(clipesQtd, jobId) {
-  const lista = document.getElementById('lista');
-  if (clipesQtd <= 0) {
-    lista.style.display = 'none';
-    return;
-  }
-  if (clipesQtd === ultimoClipesRenderizado && jobId === ultimoJobRenderizado) {
-    return;
-  }
-  ultimoClipesRenderizado = clipesQtd;
-  ultimoJobRenderizado = jobId;
-  lista.style.display = 'block';
-  let h = '<a href="/zip/' + jobId + '">Baixar todos em ZIP (' + clipesQtd + ' clipes)</a>';
-  for (let i = 1; i <= clipesQtd; i++) {
-    h += '<a href="/clipe/' + jobId + '/' + i + '">Clipe ' + i + '</a>';
-  }
-  lista.innerHTML = h;
-}
-
-async function checar() {
-  if (!job) { return; }
-  try {
-    const r = await fetch('/status/' + job);
-    const d = await r.json();
-    document.getElementById('status').innerText = d.msg || '';
-    document.getElementById('diag').innerText = d.diag || '-';
-    atualizarListaClipes(Number(d.clipes || 0), job);
-
-    if (d.estado !== 'fim' && d.estado !== 'erro') {
-      setTimeout(checar, 3000);
-    } else {
-      document.getElementById('btn-gravar').disabled = false;
-    }
-  } catch (e) {
-    setTimeout(checar, 3000);
-  }
-}
-</script>
-</body>
-</html>
-"""
-
-PAGINA_LEGAL = '''
-<!doctype html>
-<html lang="pt-br">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ titulo }} - Clipador de lives</title>
-<style>
-body {
-  margin: 0;
-  min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-  background: #07060b;
-  color: #f5f3ff;
-  padding: 24px 16px;
-}
-.box {
-  max-width: 640px;
-  margin: 0 auto;
-  background: #12101a;
-  border: 1px solid rgba(168, 130, 255, 0.25);
-  border-radius: 18px;
-  padding: 22px;
-  line-height: 1.55;
-}
-h1 { margin-top: 0; font-size: 1.4rem; }
-p { color: #c7c1de; font-size: 0.95rem; }
-a { color: #00ff38; text-decoration: none; font-weight: 600; }
-</style>
-</head>
-<body>
-<div class="box">
-  <h1>{{ titulo }}</h1>
-  <p>{{ texto }}</p>
-  <p><a href="/">← Voltar para o Clipador de lives</a></p>
-</div>
-</body>
-</html>
-'''
-
-
-def ler_fim(caminho, limite=700):
-    try:
-        if not os.path.exists(caminho):
-            return ""
-        with open(caminho, "r", errors="ignore") as f:
-            texto = f.read()
-        texto = texto.replace("\r", "\n")
-        return texto[-limite:]
-    except Exception:
-        return ""
-
-
-def listar_clipes(pasta):
-    if not os.path.isdir(pasta):
-        return []
-    arquivos = []
-    for f in sorted(os.listdir(pasta)):
-        if f.startswith("clipe_") and f.endswith(".mp4"):
-            caminho = os.path.join(pasta, f)
-            if os.path.isfile(caminho) and os.path.getsize(caminho) > 0:
-                arquivos.append(f)
-    return arquivos
-
-
-def tamanho_pasta(pasta):
-    return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta))
-
-
-def atualizar_job(job_id, campos):
-    with JOBS_LOCK:
-        if job_id in JOBS:
-            JOBS[job_id].update(campos)
-
-
-def extrair_stream(url):
-    cmd_json = ["yt-dlp", "--no-warnings", "-j", "-f", "best[height<=720]/best", url]
-    r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
-    if r.returncode == 0 and r.stdout.strip():
-        for linha in r.stdout.strip().splitlines():
-            try:
-                info = json.loads(linha)
-                stream_url = info.get("url")
-                if stream_url:
-                    headers = info.get("http_headers") or {}
-                    return stream_url, headers, ""
-            except json.JSONDecodeError:
-                continue
-
-    cmd_url = ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url]
-    r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
-    links = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip().startswith("http")]
-    if links:
-        return links[0], {}, ""
-
-    erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
-    return None, {}, erro_msg[-700:]
-
-
-def gravar(job_id, url, minutos):
-    pasta = os.path.join(BASE, job_id)
-    os.makedirs(pasta, exist_ok=True)
-    atualizar_job(job_id, pasta=pasta)
-
-    padrao = os.path.join(pasta, "clipe_%03d.mp4")
-    log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
-
-    atualizar_job(
-        job_id,
-        estado="abrindo",
-        msg="Abrindo a live...",
-        diag="Rodando yt-dlp...",
-    )
-
-    try:
-        stream, headers, erro_yt = extrair_stream(url)
-    except subprocess.TimeoutExpired:
-        atualizar_job(
-            job_id,
-            estado="erro",
-            msg="O yt-dlp demorou demais para responder.",
-            diag="Timeout ao buscar o stream da live.",
-        )
-        return
-    except Exception as e:
-        atualizar_job(
-            job_id,
-            estado="erro",
-            msg="Falha ao executar o yt-dlp.",
-            diag=str(e)[-500:],
-        )
-        return
-
-    if not stream:
-        atualizar_job(
-            job_id,
-            estado="erro",
-            msg="O yt-dlp não conseguiu o link da live.",
-            diag=erro_yt or "sem mensagem",
-        )
-        return
-
-    user_agent = headers.get(
-        "User-Agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-    )
-
-    extra_headers = []
-    for chave, valor in headers.items():
-        if chave.lower() != "user-agent" and valor:
-            extra_headers.extend(["-headers", f"{chave}: {valor}"])
-
-    atualizar_job(
-        job_id,
-        estado="gravando",
-        msg="Gravando... 0 clipes prontos",
-        diag="yt-dlp OK. Iniciando ffmpeg...",
-    )
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-user_agent", user_agent,
-        *extra_headers,
-        "-rw_timeout", "15000000",
-        "-i", stream,
-        "-t", str(minutos * 60),
-        "-c", "copy",
-        "-f", "segment",
-        "-segment_time", str(SEG),
-        "-reset_timestamps", "1",
-        padrao,
-    ]
-
-    proc = None
-    try:
-        with open(log_ffmpeg, "w") as logf:
-            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
-            inicio = time.time()
-
-            while proc.poll() is None:
-                feitos = listar_clipes(pasta)
-                clipes_prontos = max(0, len(feitos) - 1)
-                tam = tamanho_pasta(pasta)
-
-                atualizar_job(
-                    job_id,
-                    clipes=clipes_prontos,
-                    msg=f"Gravando... {clipes_prontos} clipes prontos",
-                    diag=(
-                        f"Tempo: {int(time.time() - inicio)}s | Gravado: {tam // 1024} KB\n"
-                        + ler_fim(log_ffmpeg, 500)
-                    ),
-                )
-
-                if time.time() - inicio > 60 and tam == 0:
-                    proc.kill()
-                    proc.wait()
-                    break
-
-                time.sleep(3)
-    except Exception as e:
-        if proc and proc.poll() is None:
-            proc.kill()
-        atualizar_job(
-            job_id,
-            estado="erro",
-            msg="Erro durante a gravação com ffmpeg.",
-            diag=str(e)[-500:],
-        )
-        return
-
-    feitos_finais = listar_clipes(pasta)
-    tam_final = tamanho_pasta(pasta)
-    clipes_finais = len(feitos_finais)
-
-    if clipes_finais > 0 and tam_final > 0:
-        atualizar_job(
-            job_id,
-            estado="fim",
-            clipes=clipes_finais,
-            msg=f"Pronto! {clipes_finais} clipes gerados.",
-            diag=f"Total gravado: {tam_final // 1024} KB\n" + ler_fim(log_ffmpeg, 400),
-        )
-    else:
-        atualizar_job(
-            job_id,
-            estado="erro",
-            clipes=0,
-            msg="Nenhum dado chegou em 60 segundos ou a live não está ativa.",
-            diag=ler_fim(log_ffmpeg, 800) or "Sem saída do ffmpeg.",
-        )
-
-
-@app.route("/")
-def inicio():
-    return render_template_string(PAGINA)
-
-
-@app.route("/iniciar", methods=["POST"])
-def iniciar():
-    dados = request.get_json(silent=True) or {}
-    url = str(dados.get("url", "")).strip()
-    if not (url.startswith("http://") or url.startswith("https://")):
-        return jsonify({"id": "", "erro": "Link inválido."}), 400
-
-    try:
-        minutos = int(dados.get("min", 5))
-    except (TypeError, ValueError):
-        minutos = 5
-    minutos = max(1, min(minutos, 180))
-
-    job_id = uuid.uuid4().hex[:8]
-    with JOBS_LOCK:
-        JOBS[job_id] = {
-            "estado": "iniciando",
-            "msg": "Iniciando...",
-            "clipes": 0,
-            "diag": "",
-            "pasta": "",
-        }
-
-    threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
-    return jsonify({"id": job_id})
-
-
-@app.route("/status/<job_id>")
-def status(job_id):
-    with JOBS_LOCK:
-        j = JOBS.get(job_id)
-        if not j:
-            return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
-        return jsonify({
-            "estado": j["estado"],
-            "msg": j["msg"],
-            "clipes": j["clipes"],
-            "diag": j.get("diag", ""),
-        })
-
-
-@app.route("/clipe/<job_id>/<int:n>")
-def clipe(job_id, n):
-    if n < 1:
-        return "Clipe inválido", 400
-    with JOBS_LOCK:
-        j = JOBS.get(job_id)
-        pasta = j.get("pasta") if j else ""
-    if not pasta:
-        return "Não encontrado", 404
-
-    arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
-    if not os.path.isfile(arq):
-        return "Não encontrado", 404
-    return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
-
-
-@app.route("/zip/<job_id>")
-def baixar_zip(job_id):
-    with JOBS_LOCK:
-        j = JOBS.get(job_id)
-        pasta = j.get("pasta") if j else ""
-    if not pasta:
-        return "Não encontrado", 404
-
-    arquivos = listar_clipes(pasta)
-    if not arquivos:
-        return "Nenhum clipe disponível", 404
-
-    caminho_zip = os.path.join(BASE, f"{job_id}.zip")
-    with zipfile.ZipFile(caminho_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for f in arquivos:
-            z.write(os.path.join(pasta, f), f)
-
-    return send_file(caminho_zip, as_attachment=True, download_name="clipes.zip")
-
-
-@app.route("/terms")
-def terms():
-    return render_template_string(
-        PAGINA_LEGAL,
-        titulo="Termos de Serviço",
-        texto=(
-            "O Clipador de lives permite gerar clipes de transmissões ao vivo e facilitar "
-            "a publicação em plataformas conectadas mediante autorização do usuário. "
-            "Você concorda em utilizar o serviço apenas com conteúdo próprio ou devidamente "
-            "autorizado e em conformidade com as políticas das plataformas de destino."
-        ),
-    )
-
-
-@app.route("/privacy")
-def privacy():
-    return render_template_string(
-        PAGINA_LEGAL,
-        titulo="Política de Privacidade",
-        texto=(
-            "O Clipador de lives processa os links e arquivos de vídeo temporariamente "
-            "para gerar os clipes solicitados. Não vendemos dados pessoais a terceiros e "
-            "utilizamos credenciais ou autorizações apenas para as ações explicitamente "
-            "solicitadas por você na aplicação."
-        ),
-    )
-
-
-if __
+function darPlayLive(
