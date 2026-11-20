@@ -359,7 +359,7 @@ PAGINA = """
 
       <div class="campo">
         <label for="url">Link da live</label>
-        <input id="url" type="url" placeholder="Cole o link da live (Kick, Twitch, YouTube...)">
+        <input id="url" type="url" placeholder="Cole o link da live (Kick, YouTube...)">
       </div>
 
       <div class="campo">
@@ -407,12 +407,19 @@ function plataforma(url) {
     const u = new URL(url);
     const host = u.hostname.replace('www.', '');
     const partes = u.pathname.split('/').filter(Boolean);
-    if (host === 'kick.com' && partes[0]) {
-      // Removido muted=true para permitir som
+    if ((host === 'kick.com' || host === 'kzl.ink') && partes[0]) {
       return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
     }
-    if (host === 'twitch.tv' && partes[0]) {
-      return {nome: 'Twitch', embed: 'https://player.twitch.tv/?channel=' + partes[0] + '&parent=' + location.hostname + '&muted=true'};
+    if ((host === 'youtube.com' || host === 'youtu.be')) {
+      let videoId = '';
+      if (host === 'youtu.be') {
+        videoId = partes[0];
+      } else if (partes[0] === 'live' || partes[0] === 'watch') {
+        videoId = u.searchParams.get('v');
+      }
+      if (videoId) {
+        return {nome: 'YouTube', embed: 'https://www.youtube.com/embed/' + videoId + '?autoplay=1'};
+      }
     }
   } catch (e) {}
   return null;
@@ -438,20 +445,22 @@ function mostrarPreview() {
 document.getElementById('url').addEventListener('input', mostrarPreview);
 
 const CANAIS = [
-  {nome: 'Coringa', plat: 'kick', canal: 'coringa'},
-  {nome: 'Gabepeixe', plat: 'kick', canal: 'gabepeixe'}
+  {nome: 'Bak', plat: 'kick', canal: 'bak'},
+  {nome: 'Renato Vicente', plat: 'kick', canal: 'orenatovicente'}
 ];
 
 function embedDe(c) {
-  if (c.plat === 'twitch') {
-    return 'https://player.twitch.tv/?channel=' + c.canal + '&parent=' + location.hostname + '&muted=true';
+  if (c.plat === 'youtube') {
+    return 'https://www.youtube.com/embed/' + c.canal + '?autoplay=1';
   }
-  // Removido muted=true para permitir som
   return 'https://player.kick.com/' + c.canal + '?autoplay=true';
 }
 
 function linkDe(c) {
-  return (c.plat === 'twitch' ? 'https://twitch.tv/' : 'https://kick.com/') + c.canal;
+  if (c.plat === 'youtube') {
+    return 'https://www.youtube.com/watch?v=' + c.canal;
+  }
+  return 'https://kick.com/' + c.canal;
 }
 
 function clipar(i) {
@@ -559,7 +568,7 @@ def gravar(job_id, url, minutos):
         r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
     except Exception as e:
         job["estado"] = "erro"
-        job["msg"] = "yt-dlp demorou demais ou falhou."
+        job["msg"] = "yt-dlp demorou demasiado ou falhou."
         job["diag"] = str(e)[-500:]
         return
     links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
@@ -573,17 +582,9 @@ def gravar(job_id, url, minutos):
 
     job["estado"] = "gravando"
     job["msg"] = "Gravando... 0 clipes prontos"
-    
-    # Adicionado suporte a cookies para contornar restrições
-    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     cmd = [
         "ffmpeg", "-y",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-    ]
-    if os.path.exists(cookies_path):
-        cmd.extend(["-cookies", cookies_path])
-        
-    cmd.extend([
         "-rw_timeout", "15000000",
         "-i", stream,
         "-t", str(int(minutos) * 60),
@@ -591,7 +592,7 @@ def gravar(job_id, url, minutos):
         "-f", "segment", "-segment_time", str(SEG),
         "-reset_timestamps", "1",
         padrao,
-    ])
+    ]
     logf = open(log_ffmpeg, "w")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
     inicio = time.time()
