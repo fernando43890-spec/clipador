@@ -1,20 +1,42 @@
+import json
 import os
+import threading
 import time
 import uuid
-import threading
-import subprocess
 import zipfile
+import subprocess
 from flask import Flask, request, send_file, render_template_string, jsonify
 
 app = Flask(__name__)
-BASE = "/tmp/clipador"
+BASE = "/tmp/clipador" if os.path.exists("/tmp") else "."
 os.makedirs(BASE, exist_ok=True)
+LIVES_JSON = os.path.join(BASE, "lives.json")
 JOBS = {}
 SEG = 60
 
+_MONITOR_INICIADO = False
+_MONITOR_LOCK = threading.Lock()
+
+
+def iniciar_monitor_background():
+    global _MONITOR_INICIADO
+    with _MONITOR_LOCK:
+        if _MONITOR_INICIADO:
+            return
+        try:
+            import monitor
+            threading.Thread(target=monitor.loop_monitor, daemon=True).start()
+            _MONITOR_INICIADO = True
+        except Exception:
+            pass
+
+
+iniciar_monitor_background()
+
+
 PAGINA = """
 <!doctype html>
-<html lang="pt-br">
+<html lang="pt">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -32,6 +54,7 @@ PAGINA = """
     --texto: #f5f3ff;
     --mutado: #a69ec2;
     --vivo: #ef4444;
+    --offline: #6b7280;
   }
 
   * {
@@ -299,7 +322,7 @@ PAGINA = """
   .live-tempo {
     color: var(--mutado);
     font-variant-numeric: tabular-nums;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
 
   .tela-live {
@@ -308,8 +331,7 @@ PAGINA = """
     overflow: hidden;
     background: linear-gradient(135deg, #241942 0%, #110d1d 60%, #1c1333 100%);
     border: 1px solid var(--borda-forte);
-    padding: 18px 14px;
-    min-height: 150px;
+    padding: 16px 14px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -327,7 +349,7 @@ PAGINA = """
   }
 
   .tela-centro {
-    margin: 14px 0;
+    margin: 12px 0;
   }
 
   .tela-centro strong {
@@ -341,85 +363,77 @@ PAGINA = """
     color: var(--mutado);
   }
 
-  .onda-marcadores {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-top: 12px;
-  }
-
-  .marcador {
-    border: 1.5px solid var(--roxo-brilho);
-    background: rgba(139, 108, 246, 0.14);
-    border-radius: 10px;
-    padding: 7px 6px;
-    text-align: center;
-    cursor: pointer;
-  }
-
-  .marcador span {
-    display: block;
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: #fff;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .marcador small {
-    font-size: 0.68rem;
-    color: var(--roxo-brilho);
-  }
-
-  .grid-3 {
+  .canais-grid {
     margin-top: 12px;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
   }
 
-  .card-live {
+  .card-canal {
     background: var(--surface-2);
     border: 1px solid var(--borda);
     border-radius: 14px;
-    padding: 12px 10px;
+    padding: 12px;
     text-align: left;
     color: var(--texto);
     cursor: pointer;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    min-height: 112px;
+    min-height: 108px;
     transition: border-color 0.2s ease, transform 0.15s ease;
   }
 
-  .card-live:hover {
+  .card-canal:hover {
     border-color: var(--roxo-brilho);
     transform: translateY(-2px);
   }
 
-  .card-pill {
-    display: inline-block;
-    font-size: 0.66rem;
-    font-weight: 700;
+  .card-canal.online {
+    border-color: rgba(239, 68, 68, 0.55);
+  }
+
+  .estado-linha {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    font-weight: 800;
     text-transform: uppercase;
-    color: var(--roxo-brilho);
-    background: rgba(139, 108, 246, 0.16);
-    padding: 2px 7px;
-    border-radius: 999px;
     margin-bottom: 6px;
-    width: fit-content;
+  }
+
+  .ponto {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--offline);
+  }
+
+  .card-canal.online .ponto {
+    background: var(--vivo);
+    box-shadow: 0 0 8px var(--vivo);
+  }
+
+  .estado-texto {
+    color: var(--mutado);
+  }
+
+  .card-canal.online .estado-texto {
+    color: #fca5a5;
   }
 
   .card-nome {
-    font-size: 0.86rem;
+    font-size: 0.92rem;
     font-weight: 700;
     line-height: 1.25;
   }
 
   .card-acao {
     margin-top: 8px;
-    font-size: 0.72rem;
-    color: var(--mutado);
+    font-size: 0.74rem;
+    color: var(--roxo-brilho);
   }
 
   .aviso {
@@ -472,57 +486,30 @@ PAGINA = """
       <pre id="diag">-</pre>
     </div>
 
-    <section class="lives-box" aria-label="Lives e cortes">
+    <section class="lives-box" aria-label="Lives monitorizadas">
       <div class="lives-top">
-        <span class="live-tag">Kick • Lives</span>
-        <span class="live-tempo">01:00 / clipe</span>
+        <span class="live-tag">Monitor de lives</span>
+        <span class="live-tempo" id="lives-atualizacao">A verificar...</span>
       </div>
 
       <div class="tela-live">
-        <span class="tela-topo-badge">PRÉVIA DE CORTES AUTOMÁTICOS</span>
+        <span class="tela-topo-badge">ESTADO EM TEMPO REAL</span>
         <div class="tela-centro">
-          <strong id="preview-titulo">Selecione um atalho ou cole o link acima</strong>
-          <span id="preview-sub">Cada minuto gravado vira um clipe MP4 separado pronto para baixar.</span>
+          <strong id="preview-titulo">Canais monitorizados</strong>
+          <span id="preview-sub">Toca num canal para preencher o link automaticamente.</span>
         </div>
 
-        <div class="onda-marcadores">
-          <div class="marcador" onclick="focarUrl()">
-            <span>00:00</span>
-            <small>Clipe 1</small>
-          </div>
-          <div class="marcador" onclick="focarUrl()">
-            <span>01:00</span>
-            <small>Clipe 2</small>
-          </div>
-          <div class="marcador" onclick="focarUrl()">
-            <span>02:00</span>
-            <small>Clipe 3</small>
+        <div class="canais-grid" id="canais-grid">
+          <div class="card-canal">
+            <div class="estado-linha"><span class="ponto"></span><span class="estado-texto">A carregar</span></div>
+            <div class="card-nome">A obter estado...</div>
+            <div class="card-acao">A aguardar monitor</div>
           </div>
         </div>
-      </div>
-
-      <div class="grid-3">
-        <button type="button" class="card-live" onclick="usarAtalho('Kick Live', 'https://kick.com/')">
-          <span class="card-pill">Kick</span>
-          <span class="card-nome">Canal Kick</span>
-          <span class="card-acao">Preencher link →</span>
-        </button>
-
-        <button type="button" class="card-live" onclick="usarAtalho('Twitch Live', 'https://www.twitch.tv/')">
-          <span class="card-pill">Twitch</span>
-          <span class="card-nome">Canal Twitch</span>
-          <span class="card-acao">Preencher link →</span>
-        </button>
-
-        <button type="button" class="card-live" onclick="usarAtalho('YouTube Live', 'https://www.youtube.com/')">
-          <span class="card-pill">YouTube</span>
-          <span class="card-nome">Live YouTube</span>
-          <span class="card-acao">Preencher link →</span>
-        </button>
       </div>
     </section>
 
-    <p class="aviso">Use só com autorização do streamer ou nas suas próprias lives.</p>
+    <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
   </main>
 
 <script>
@@ -534,14 +521,55 @@ function focarUrl() {
   setTimeout(() => input.focus(), 250);
 }
 
-function usarAtalho(nome, linkBase) {
+function selecionarCanal(nome, url, online) {
   const input = document.getElementById('url');
-  if (!input.value.trim() || input.value.trim().endsWith('.com/') || input.value.trim().endsWith('.tv/')) {
-    input.value = linkBase;
-  }
-  document.getElementById('preview-titulo').innerText = nome + ' selecionado';
-  document.getElementById('preview-sub').innerText = 'Complete o link do canal ao vivo e clique em "Cortar meu vídeo".';
+  input.value = url;
+  document.getElementById('preview-titulo').innerText = nome + (online ? ' (AO VIVO)' : ' (OFFLINE)');
+  document.getElementById('preview-sub').innerText = online
+    ? 'Link preenchido. Clica em "Cortar meu vídeo" para iniciar.'
+    : 'Canal marcado como offline no momento. Link preenchido no campo.';
   focarUrl();
+}
+
+async function carregarLives() {
+  try {
+    const r = await fetch('/api/lives');
+    const lista = await r.json();
+    const grid = document.getElementById('canais-grid');
+    const atualizacao = document.getElementById('lives-atualizacao');
+
+    if (!Array.isArray(lista) || lista.length === 0) {
+      grid.innerHTML = '<div class="card-canal"><div class="estado-linha"><span class="ponto"></span><span class="estado-texto">Sem dados</span></div><div class="card-nome">Nenhuma live registada ainda</div><div class="card-acao">O monitor está a iniciar</div></div>';
+      atualizacao.innerText = 'Sem leitura';
+      return;
+    }
+
+    let html = '';
+    let maxTs = 0;
+    for (const c of lista) {
+      const online = Boolean(c.online);
+      if (c.atualizado_em && c.atualizado_em > maxTs) {
+        maxTs = c.atualizado_em;
+      }
+      const nomeEsc = String(c.nome || 'Canal').replace(/'/g, "\\'");
+      const urlEsc = String(c.url || '').replace(/'/g, "\\'");
+      html += '<button type="button" class="card-canal ' + (online ? 'online' : '') + '" onclick="selecionarCanal(\'' + nomeEsc + '\', \'' + urlEsc + '\', ' + online + ')">' +
+        '<div class="estado-linha"><span class="ponto"></span><span class="estado-texto">' + (online ? 'AO VIVO' : 'OFFLINE') + '</span></div>' +
+        '<div class="card-nome">' + (c.nome || 'Canal') + '</div>' +
+        '<div class="card-acao">' + (online ? 'Usar live →' : 'Preencher link →') + '</div>' +
+        '</button>';
+    }
+    grid.innerHTML = html;
+
+    if (maxTs > 0) {
+      const d = new Date(maxTs * 1000);
+      atualizacao.innerText = 'Atualizado ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      atualizacao.innerText = 'Ativo';
+    }
+  } catch (e) {
+    document.getElementById('lives-atualizacao').innerText = 'Erro ao ler';
+  }
 }
 
 async function iniciar() {
@@ -550,7 +578,7 @@ async function iniciar() {
   const btn = document.getElementById('btn-gravar');
   if (!url) { return; }
   btn.disabled = true;
-  document.getElementById('status').innerText = 'Iniciando...';
+  document.getElementById('status').innerText = 'A iniciar...';
   try {
     const r = await fetch('/iniciar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url:url, min:min})});
     const d = await r.json();
@@ -588,10 +616,14 @@ async function checar() {
     document.getElementById('btn-gravar').disabled = false;
   }
 }
+
+carregarLives();
+setInterval(carregarLives, 15000);
 </script>
 </body>
 </html>
 """
+
 
 def ler_fim(caminho, limite=700):
     try:
@@ -602,12 +634,14 @@ def ler_fim(caminho, limite=700):
     except Exception:
         return ""
 
+
 def tamanho_pasta(pasta):
     total = 0
     for f in os.listdir(pasta):
         if f.startswith("clipe_"):
             total += os.path.getsize(os.path.join(pasta, f))
     return total
+
 
 def gravar(job_id, url, minutos):
     job = JOBS[job_id]
@@ -618,27 +652,27 @@ def gravar(job_id, url, minutos):
     log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
 
     job["estado"] = "abrindo"
-    job["msg"] = "Abrindo a live..."
-    job["diag"] = "Rodando yt-dlp..."
+    job["msg"] = "A abrir a live..."
+    job["diag"] = "A executar yt-dlp..."
     cmd_url = ["yt-dlp", "-g", "-f", "best[height<=720]/best", url]
     try:
         r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
     except Exception as e:
         job["estado"] = "erro"
-        job["msg"] = "yt-dlp demorou demais ou falhou."
+        job["msg"] = "yt-dlp demorou demasiado ou falhou."
         job["diag"] = str(e)[-500:]
         return
     links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
     if not links:
         job["estado"] = "erro"
-        job["msg"] = "O yt-dlp não conseguiu o link da live."
+        job["msg"] = "O yt-dlp não conseguiu obter o link da live."
         job["diag"] = (r.stderr or "sem mensagem")[-700:]
         return
     stream = links[0]
-    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". Iniciando ffmpeg..."
+    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". A iniciar ffmpeg..."
 
     job["estado"] = "gravando"
-    job["msg"] = "Gravando... 0 clipes prontos"
+    job["msg"] = "A gravar... 0 clipes prontos"
     cmd = [
         "ffmpeg", "-y",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
@@ -657,7 +691,7 @@ def gravar(job_id, url, minutos):
         feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
         job["clipes"] = max(0, len(feitos) - 1)
         tam = tamanho_pasta(pasta)
-        job["msg"] = "Gravando... " + str(job["clipes"]) + " clipes prontos"
+        job["msg"] = "A gravar... " + str(job["clipes"]) + " clipes prontos"
         job["diag"] = ("Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
                        + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500))
         if time.time() - inicio > 60 and tam == 0:
@@ -672,24 +706,43 @@ def gravar(job_id, url, minutos):
         job["msg"] = "Pronto! " + str(len(feitos)) + " clipes gerados."
     else:
         job["estado"] = "erro"
-        job["msg"] = "Nenhum dado chegou em 60 segundos. A Kick pode ter bloqueado o servidor."
+        job["msg"] = "Nenhum dado chegou em 60 segundos. A plataforma pode ter bloqueado o servidor."
         job["diag"] = ler_fim(log_ffmpeg, 800)
+
 
 @app.route("/")
 def inicio():
+    iniciar_monitor_background()
     return render_template_string(PAGINA)
+
+
+@app.route("/api/lives")
+def api_lives():
+    iniciar_monitor_background()
+    if not os.path.exists(LIVES_JSON):
+        return jsonify([])
+    try:
+        with open(LIVES_JSON, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        if isinstance(dados, list):
+            return jsonify(dados)
+    except Exception:
+        pass
+    return jsonify([])
+
 
 @app.route("/iniciar", methods=["POST"])
 def iniciar():
-    dados = request.get_json()
+    dados = request.get_json() or {}
     url = dados.get("url", "").strip()
     minutos = int(dados.get("min", 5))
     if not url.startswith("http"):
         return jsonify({"id": ""}), 400
     job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": ""}
+    JOBS[job_id] = {"estado": "iniciando", "msg": "A iniciar...", "clipes": 0, "diag": ""}
     threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
     return jsonify({"id": job_id})
+
 
 @app.route("/status/<job_id>")
 def status(job_id):
@@ -697,6 +750,7 @@ def status(job_id):
     if not j:
         return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
     return jsonify({"estado": j["estado"], "msg": j["msg"], "clipes": j["clipes"], "diag": j.get("diag", "")})
+
 
 @app.route("/clipe/<job_id>/<int:n>")
 def clipe(job_id, n):
@@ -707,6 +761,7 @@ def clipe(job_id, n):
     if not os.path.exists(arq):
         return "Não encontrado", 404
     return send_file(arq, as_attachment=True, download_name="clipe_%d.mp4" % n)
+
 
 @app.route("/zip/<job_id>")
 def baixar_zip(job_id):
@@ -720,5 +775,7 @@ def baixar_zip(job_id):
                 z.write(os.path.join(j["pasta"], f), f)
     return send_file(caminho, as_attachment=True, download_name="clipes.zip")
 
+
 if __name__ == "__main__":
+    iniciar_monitor_background()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
