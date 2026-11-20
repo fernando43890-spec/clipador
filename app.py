@@ -306,6 +306,37 @@ PAGINA = """
     border-radius: 12px;
     background: #000;
   }
+  .player-espera {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 12px;
+    background: #09080e;
+    border: 1px solid var(--borda);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    cursor: pointer;
+    color: var(--mutado);
+    font-size: 0.85rem;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .player-espera:hover {
+    border-color: var(--kick-verde);
+    background: #0e0c17;
+    color: var(--texto);
+  }
+  .btn-play-live {
+    background: var(--kick-verde);
+    color: #0d0a16;
+    border: 0;
+    border-radius: 999px;
+    padding: 9px 16px;
+    font-weight: 800;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
   .player-aviso {
     margin: 8px 0 0;
     font-size: .76rem;
@@ -352,6 +383,11 @@ PAGINA = """
     margin-bottom: 8px;
     font-weight: 700;
   }
+  .live-acoes {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
   .btn-mini {
     background: var(--kick-verde);
     color: #0d0a16;
@@ -362,6 +398,11 @@ PAGINA = """
     font-size: .8rem;
     cursor: pointer;
     transition: filter 0.2s ease, transform 0.15s ease;
+  }
+  .btn-mini.secundario {
+    background: var(--surface-2);
+    color: var(--texto);
+    border: 1px solid var(--borda-forte);
   }
   .live-item.destaque .btn-mini {
     background: var(--kick-brilho);
@@ -449,6 +490,7 @@ PAGINA = """
 let job = null;
 let ultimoClipesRenderizado = -1;
 let ultimoJobRenderizado = null;
+const livesCarregadas = new Set();
 
 function plataforma(url) {
   try {
@@ -489,8 +531,8 @@ const CANAIS = [
   {nome: 'Coringa', plat: 'kick', canal: 'coringa'}
 ];
 
-function embedDe(c) {
-  return 'https://player.kick.com/' + c.canal + '?autoplay=true';
+function embedDe(c, autoplay) {
+  return 'https://player.kick.com/' + c.canal + '?autoplay=' + (autoplay ? 'true' : 'false');
 }
 
 function linkDe(c) {
@@ -511,6 +553,15 @@ function clipar(i) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+function darPlayLive(canal) {
+  livesCarregadas.add(canal);
+  const slot = document.getElementById('player-slot-' + canal);
+  if (!slot) { return; }
+  slot.innerHTML = '<iframe class="player" src="https://player.kick.com/' + canal + '?autoplay=true" allowfullscreen allow="autoplay; fullscreen"></iframe>';
+  const btn = document.getElementById('btn-play-' + canal);
+  if (btn) { btn.style.display = 'none'; }
+}
+
 function montarLives(lista, comDestaque) {
   let h = '';
   lista.forEach(function (c, pos) {
@@ -518,6 +569,7 @@ function montarLives(lista, comDestaque) {
     const viewers = c.viewers || 0;
     const isTop = comDestaque && pos === 0 && viewers > 0;
     const textoViewers = formatarViewers(viewers);
+    const deveCarregar = isTop || livesCarregadas.has(c.canal);
 
     h += '<div class="live-item' + (isTop ? ' destaque' : '') + '">';
     if (isTop) {
@@ -525,8 +577,18 @@ function montarLives(lista, comDestaque) {
     }
     h += '<div class="live-topo"><span><span class="ponto"></span>' + c.nome +
       (!isTop && textoViewers ? '<span class="viewers-tag">(' + textoViewers + ')</span>' : '') +
-      '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
-      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
+      '</span><div class="live-acoes">';
+    if (!deveCarregar) {
+      h += '<button id="btn-play-' + c.canal + '" class="btn-mini secundario" onclick="darPlayLive(\'' + c.canal + '\')">Play</button>';
+    }
+    h += '<button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div></div>' +
+      '<div id="player-slot-' + c.canal + '">';
+    if (deveCarregar) {
+      h += '<iframe class="player" src="' + embedDe(c, isTop) + '" allowfullscreen allow="autoplay; fullscreen"></iframe>';
+    } else {
+      h += '<div class="player-espera" onclick="darPlayLive(\'' + c.canal + '\')"><button type="button" class="btn-play-live">▶ Dar play na live</button><span>Carrega somente ao clicar</span></div>';
+    }
+    h += '</div></div>';
   });
   document.getElementById('lives').innerHTML = h;
 }
