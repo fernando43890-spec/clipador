@@ -163,15 +163,98 @@ PAGINA = """
     color: #c4b5fd;
     margin: 8px 0 0;
     line-height: 1.45;
-  }  .card-live{background:var(--surface);border:1px solid var(--borda-forte);border-radius:20px;padding:14px;margin-top:14px}
-  .card-topo{display:flex;justify-content:space-between;margin-bottom:10px;font-weight:700}
-  .ponto{display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff5a4d;margin-right:8px}
-  .player{width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
-  .player-aviso{margin:8px 0 0;font-size:.76rem;color:var(--mutado)}
-  .live-item{margin-top:12px}
-  .live-topo{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700}
-  .btn-mini{background:var(--roxo);color:#0d0a16;border:0;border-radius:10px;padding:8px 12px;font-weight:700;font-size:.8rem}
+  }
 
+  .card-live {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--borda-forte);
+    border-radius: 20px;
+    padding: 14px;
+    margin-top: 14px;
+  }
+
+  .card-topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+
+  .ponto {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ff5a4d;
+    margin-right: 8px;
+  }
+
+  .tempo {
+    color: var(--mutado);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .player {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 0;
+    border-radius: 12px;
+    background: #000;
+  }
+
+  .player-aviso {
+    margin: 8px 0 0;
+    font-size: 0.76rem;
+    color: var(--mutado);
+  }
+
+  .onda-box {
+    position: relative;
+    margin-top: 28px;
+  }
+
+  .rotulos {
+    position: absolute;
+    top: -20px;
+    left: 0;
+    right: 0;
+    height: 18px;
+  }
+
+  .rotulos span {
+    position: absolute;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--roxo-brilho);
+  }
+
+  .onda {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 56px;
+  }
+
+  .onda i {
+    flex: 1;
+    border-radius: 2px;
+    background: rgba(168, 130, 255, 0.28);
+  }
+
+  .onda i.on {
+    background: var(--roxo-brilho);
+  }
+
+  .onda i.rec {
+    background: var(--roxo);
+    animation: piscar 1s infinite;
+  }
+
+  @keyframes piscar {
+    50% { opacity: 0.35; }
+  }
 </style>
 </head>
 <body>
@@ -197,17 +280,18 @@ PAGINA = """
 
       <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
     </section>
-    <section class="card-live" id="card-live" style="display:none">
+
+    <section class="card-live" id="card-live">
       <div class="card-topo">
         <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
-        <span>AO VIVO</span>
+        <span class="tempo" id="tempo">AO VIVO</span>
       </div>
       <iframe id="player" class="player" allowfullscreen allow="autoplay; fullscreen"></iframe>
-      <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
-    </section>
-    <section class="caixa" id="lives-box">
-      <span class="diag-topo">Lives agora</span>
-      <div id="lives"></div>
+      <p class="player-aviso">Se o vídeo não aparecer aqui, a gravação ainda pode funcionar.</p>
+      <div class="onda-box">
+        <div class="rotulos" id="rotulos"></div>
+        <div class="onda" id="onda"></div>
+      </div>
     </section>
 
     <div class="caixa" id="status">Aguardando link.</div>
@@ -220,6 +304,87 @@ PAGINA = """
 
 <script>
 let job = null;
+let totalMin = 5;
+let tIni = null;
+let timerId = null;
+let ultimoEmbed = "";
+const NB = 60;
+
+function montarOnda() {
+  let h = "";
+  for (let i = 0; i < NB; i++) {
+    const alt = 20 + Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.6)) * 80;
+    h += '<i style="height:' + alt.toFixed(0) + '%"></i>';
+  }
+  document.getElementById('onda').innerHTML = h;
+}
+
+function desenhar(clipes, gravando) {
+  const bars = document.querySelectorAll('#onda i');
+  const porClipe = NB / totalMin;
+  const ate = Math.min(NB, Math.round(clipes * porClipe));
+  const rec = gravando ? Math.min(NB, Math.round((clipes + 1) * porClipe)) : ate;
+  bars.forEach(function (b, i) {
+    b.className = i < ate ? 'on' : (i < rec ? 'rec' : '');
+  });
+  const passo = Math.max(1, Math.ceil(totalMin / 6));
+  let r = '';
+  for (let c = 1; c <= clipes && c <= totalMin; c++) {
+    if (c === 1 || c % passo === 0) {
+      r += '<span style="left:' + (((c - 1) / totalMin) * 100) + '%">#' + c + '</span>';
+    }
+  }
+  document.getElementById('rotulos').innerHTML = r;
+}
+
+function fmt(s) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const x = s % 60;
+  const mm = h > 0 ? h + ':' + String(m).padStart(2, '0') : String(m);
+  return mm + ':' + String(x).padStart(2, '0');
+}
+
+function plataforma(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace('www.', '');
+    const partes = u.pathname.split('/').filter(Boolean);
+    if (host === 'kick.com' && partes[0]) {
+      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true&muted=true'};
+    }
+    if (host === 'twitch.tv' && partes[0]) {
+      return {nome: 'Twitch', embed: 'https://player.twitch.tv/?channel=' + partes[0] + '&parent=' + location.hostname + '&muted=true'};
+    }
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtu.be') {
+      let id = u.searchParams.get('v');
+      if (!id && host === 'youtu.be') { id = partes[0]; }
+      if (!id && partes[0] === 'live') { id = partes[1]; }
+      if (id) {
+        return {nome: 'YouTube', embed: 'https://www.youtube.com/embed/' + id + '?autoplay=1&mute=1'};
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function mostrarPreview() {
+  const url = document.getElementById('url').value.trim();
+  const card = document.getElementById('card-live');
+  const p = plataforma(url);
+  if (!p) {
+    card.style.display = 'none';
+    document.getElementById('player').src = 'about:blank';
+    ultimoEmbed = '';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('plat-nome').innerText = p.nome;
+  if (p.embed !== ultimoEmbed) {
+    document.getElementById('player').src = p.embed;
+    ultimoEmbed = p.embed;
+  }
+}
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -241,6 +406,13 @@ async function iniciar() {
       return;
     }
     job = d.id;
+    totalMin = parseInt(min);
+    tIni = Date.now();
+    if (timerId) { clearInterval(timerId); }
+    timerId = setInterval(function () {
+      document.getElementById('tempo').innerText = fmt(Math.floor((Date.now() - tIni) / 1000));
+    }, 1000);
+    desenhar(0, true);
     checar();
   } catch (e) {
     document.getElementById('status').innerText = 'Erro ao iniciar.';
@@ -263,79 +435,62 @@ async function checar() {
     }
     lista.innerHTML = h;
   }
-  if (d.estado !== 'fim' && d.estado !== 'erro') {
+  const terminou = (d.estado === 'fim' || d.estado === 'erro');
+  desenhar(d.clipes, !terminou);
+  if (!terminou) {
     setTimeout(checar, 3000);
   } else {
+    if (timerId) { clearInterval(timerId); }
     document.getElementById('btn-gravar').disabled = false;
   }
 }
-function plataforma(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace('www.', '');
-    const partes = u.pathname.split('/').filter(Boolean);
-    if (host === 'kick.com' && partes[0]) {
-      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true&muted=true'};
-    }
-    if (host === 'twitch.tv' && partes[0]) {
-      return {nome: 'Twitch', embed: 'https://player.twitch.tv/?channel=' + partes[0] + '&parent=' + location.hostname + '&muted=true'};
-    }
-  } catch (e) {}
-  return null;
-}
 
-let ultimoEmbed = '';
-function mostrarPreview() {
-  const p = plataforma(document.getElementById('url').value.trim());
-  const card = document.getElementById('card-live');
-  if (!p) {
-    card.style.display = 'none';
-    document.getElementById('player').src = 'about:blank';
-    ultimoEmbed = '';
-    return;
-  }
-  card.style.display = 'block';
-  document.getElementById('plat-nome').innerText = p.nome;
-  if (p.embed !== ultimoEmbed) {
-    document.getElementById('player').src = p.embed;
-    ultimoEmbed = p.embed;
-  }
-}
+montarOnda();
 document.getElementById('url').addEventListener('input', mostrarPreview);
-const CANAIS = [
-  {nome: 'Coringa', plat: 'kick', canal: 'coringa'},
-  {nome: 'Gabepeixe', plat: 'kick', canal: 'gabepeixe'}
-];
-
-function embedDe(c) {
-  if (c.plat === 'twitch') {
-    return 'https://player.twitch.tv/?channel=' + c.canal + '&parent=' + location.hostname + '&muted=true';
-  }
-  return 'https://player.kick.com/' + c.canal + '?autoplay=true&muted=true';
-}
-
-function linkDe(c) {
-  return (c.plat === 'twitch' ? 'https://twitch.tv/' : 'https://kick.com/') + c.canal;
-}
-
-function clipar(i) {
-  document.getElementById('url').value = linkDe(CANAIS[i]);
-  mostrarPreview();
-  window.scrollTo(0, 0);
-}
-
-function montarLives() {
-  let h = '';
-  CANAIS.forEach(function (c, i) {
-    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
-      '</span><button class="btn-mini" onclick="clipar(' + i + ')">Usar esta live</button></div>' +
-      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
-  });
-  document.getElementById('lives').innerHTML = h;
-}
-montarLives();
-
 </script>
 </body>
 </html>
- 
+"""
+
+
+def ler_fim(caminho, limite=700):
+    try:
+        with open(caminho, "r", errors="ignore") as f:
+            texto = f.read()
+        texto = texto.replace("\r", "\n")
+        return texto[-limite:]
+    except Exception:
+        return ""
+
+
+def tamanho_pasta(pasta):
+    total = 0
+    for f in os.listdir(pasta):
+        if f.startswith("clipe_"):
+            total += os.path.getsize(os.path.join(pasta, f))
+    return total
+
+
+def gravar(job_id, url, minutos):
+    job = JOBS[job_id]
+    pasta = os.path.join(BASE, job_id)
+    os.makedirs(pasta, exist_ok=True)
+    job["pasta"] = pasta
+    padrao = os.path.join(pasta, "clipe_%03d.mp4")
+    log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
+
+    job["estado"] = "abrindo"
+    job["msg"] = "A abrir a live..."
+    job["diag"] = "A executar yt-dlp..."
+    cmd_url = ["yt-dlp", "-g", "-f", "best[height<=720]/best", url]
+    try:
+        r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
+    except Exception as e:
+        job["estado"] = "erro"
+        job["msg"] = "yt-dlp demorou demasiado ou falhou."
+        job["diag"] = str(e)[-500:]
+        return
+    links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
+    if not links:
+        job["estado"] = "erro"
+        job["
