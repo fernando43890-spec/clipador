@@ -21,82 +21,129 @@ PAGINA = """
 <title>Clipador de lives</title>
 <style>
   :root {
-    --bg: #09090c;
-    --card: #121218;
-    --input: #1b1b24;
-    --border: rgba(255, 255, 255, 0.08);
-    --roxo: #9146ff;
-    --roxo-escuro: #7328e6;
-    --roxo-claro: #c084fc;
-    --texto: #f4f4f6;
-    --mutado: #a1a1aa;
+    --bg: #07060b;
+    --surface: #12101a;
+    --surface-2: #191624;
+    --input: #1f1b2e;
+    --borda: rgba(168, 130, 255, 0.16);
+    --borda-forte: rgba(168, 130, 255, 0.34);
+    --roxo: #8b6cf6;
+    --roxo-brilho: #a488ff;
+    --texto: #f5f3ff;
+    --mutado: #a69ec2;
+    --vivo: #ef4444;
   }
 
   * {
     box-sizing: border-box;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-    background:
-      radial-gradient(circle at 50% -10%, rgba(145, 70, 255, 0.22), transparent 50%),
-      var(--bg);
-    color: var(--texto);
-    min-height: 100vh;
     margin: 0;
-    padding: 24px 16px;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    color: var(--texto);
+    background:
+      radial-gradient(ellipse at 50% -8%, rgba(139, 108, 246, 0.28), transparent 55%),
+      var(--bg);
+    padding-bottom: 36px;
   }
 
-  .container {
-    width: 100%;
-    max-width: 500px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    padding: 24px 20px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  /* Barra superior fixa */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    background: rgba(7, 6, 11, 0.82);
+    border-bottom: 1px solid var(--borda);
   }
 
-  .topo {
+  .topbar-inner {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 12px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
   }
 
-  h2 {
-    margin: 0;
-    font-size: 1.5rem;
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--texto);
     font-weight: 700;
-    letter-spacing: -0.02em;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
   }
 
-  .badge {
-    font-size: 0.72rem;
+  .logo-box {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #a855f7, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.9rem;
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(139, 108, 246, 0.35);
+  }
+
+  .btn-topo {
+    background: var(--roxo);
+    color: #0d0a16;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--roxo-claro);
-    background: rgba(145, 70, 255, 0.14);
-    border: 1px solid rgba(145, 70, 255, 0.35);
-    padding: 4px 9px;
+    font-size: 0.85rem;
+    padding: 8px 14px;
     border-radius: 999px;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
     white-space: nowrap;
   }
 
-  .descricao {
-    color: var(--mutado);
-    font-size: 0.94rem;
-    line-height: 1.5;
-    margin: 10px 0 18px;
+  .wrap {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 20px 16px 0;
   }
 
-  .descricao strong {
+  /* Card principal de entrada */
+  .hero-card {
+    background: var(--surface);
+    border: 1px solid var(--borda-forte);
+    border-radius: 20px;
+    padding: 20px 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  }
+
+  .hero-titulo {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .hero-sub {
+    margin: 8px 0 16px;
+    color: var(--mutado);
+    font-size: 0.92rem;
+    line-height: 1.48;
+  }
+
+  .hero-sub strong {
     color: var(--texto);
-    font-weight: 600;
   }
 
   .campo {
@@ -105,7 +152,7 @@ PAGINA = """
 
   label {
     display: block;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     font-weight: 600;
     color: var(--mutado);
     margin-bottom: 6px;
@@ -113,10 +160,10 @@ PAGINA = """
 
   input, select {
     width: 100%;
-    padding: 13px 14px;
+    padding: 14px;
     font-size: 0.96rem;
-    border-radius: 11px;
-    border: 1px solid var(--border);
+    border-radius: 12px;
+    border: 1px solid var(--borda);
     background: var(--input);
     color: var(--texto);
     outline: none;
@@ -124,12 +171,12 @@ PAGINA = """
   }
 
   input::placeholder {
-    color: #71717a;
+    color: #8c84a8;
   }
 
   input:focus, select:focus {
-    border-color: var(--roxo);
-    box-shadow: 0 0 0 3px rgba(145, 70, 255, 0.22);
+    border-color: var(--roxo-brilho);
+    box-shadow: 0 0 0 3px rgba(139, 108, 246, 0.22);
   }
 
   select {
@@ -146,79 +193,83 @@ PAGINA = """
     padding-right: 36px;
   }
 
-  button {
+  .btn-principal {
     width: 100%;
-    padding: 14px 16px;
-    margin-top: 6px;
+    padding: 15px 18px;
+    margin-top: 4px;
     font-size: 1rem;
     font-weight: 700;
-    border-radius: 11px;
+    border-radius: 12px;
     border: none;
-    background: linear-gradient(135deg, var(--roxo), var(--roxo-escuro));
-    color: #fff;
+    background: var(--roxo);
+    color: #0d0a16;
     cursor: pointer;
-    box-shadow: 0 8px 24px rgba(145, 70, 255, 0.32);
-    transition: transform 0.15s ease, filter 0.2s ease;
+    box-shadow: 0 10px 26px rgba(139, 108, 246, 0.35);
+    transition: transform 0.15s ease, background 0.2s ease;
   }
 
-  button:hover {
-    filter: brightness(1.08);
+  .btn-principal:hover {
+    background: var(--roxo-brilho);
     transform: translateY(-1px);
   }
 
-  button:active {
+  .btn-principal:active {
     transform: translateY(0);
   }
 
-  button:disabled {
-    opacity: 0.6;
+  .btn-principal:disabled {
+    opacity: 0.55;
     cursor: not-allowed;
     transform: none;
   }
 
+  .meta-linha {
+    margin-top: 12px;
+    font-size: 0.82rem;
+    color: var(--mutado);
+    text-align: center;
+  }
+
+  /* Caixas de status, clipes e diagnóstico */
   .caixa {
-    background: #0d0d12;
-    border: 1px solid var(--border);
-    padding: 13px 14px;
-    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--borda);
+    border-radius: 16px;
+    padding: 14px 16px;
     margin-top: 14px;
     font-size: 0.92rem;
-    line-height: 1.45;
   }
 
   #status {
+    font-weight: 600;
     color: var(--texto);
-    font-weight: 500;
   }
 
   #lista a {
     display: block;
-    color: var(--roxo-claro);
+    color: var(--texto);
     text-decoration: none;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: rgba(145, 70, 255, 0.08);
-    border: 1px solid rgba(145, 70, 255, 0.18);
-    margin-top: 6px;
-    font-size: 0.88rem;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--borda);
+    margin-top: 8px;
+    font-size: 0.9rem;
     font-weight: 500;
-    transition: background 0.15s ease;
   }
 
   #lista a:first-child {
     margin-top: 0;
-    background: rgba(145, 70, 255, 0.18);
+    background: rgba(139, 108, 246, 0.22);
+    border-color: var(--borda-forte);
+    color: var(--roxo-brilho);
     font-weight: 700;
   }
 
-  #lista a:hover {
-    background: rgba(145, 70, 255, 0.24);
-  }
-
-  .diag-titulo {
-    font-size: 0.8rem;
+  .diag-topo {
+    font-size: 0.76rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     color: var(--mutado);
     font-weight: 700;
   }
@@ -228,53 +279,175 @@ PAGINA = """
     word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.78rem;
-    color: #93c5fd;
+    color: #c4b5fd;
     margin: 8px 0 0;
+    line-height: 1.45;
+  }
+
+  /* Prévia visual no estilo da referência */
+  .preview-card {
+    margin-top: 18px;
+    background: var(--surface);
+    border: 1px solid var(--borda);
+    border-radius: 20px;
+    padding: 16px;
+  }
+
+  .preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .live-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .live-dot::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--vivo);
+    box-shadow: 0 0 10px var(--vivo);
+  }
+
+  .preview-tela {
+    background: linear-gradient(145deg, #1d1730, #0d0b14);
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    padding: 22px 16px;
+    text-align: center;
+  }
+
+  .preview-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--roxo-brilho);
+    background: rgba(139, 108, 246, 0.15);
+    border: 1px solid var(--borda);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 8px;
+  }
+
+  .preview-tela p {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--mutado);
+    line-height: 1.45;
+  }
+
+  .timeline {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .slot {
+    background: var(--surface-2);
+    border: 1px solid var(--borda-forte);
+    border-radius: 10px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .slot strong {
+    display: block;
+    font-size: 0.82rem;
+    color: var(--texto);
+  }
+
+  .slot span {
+    font-size: 0.72rem;
+    color: var(--mutado);
   }
 
   .aviso {
-    color: #71717a;
-    font-size: 0.8rem;
+    color: #7c7496;
+    font-size: 0.78rem;
     text-align: center;
-    margin: 16px 0 0;
-    line-height: 1.4;
+    margin: 18px 0 0;
+    line-height: 1.45;
   }
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="topo">
-    <h2>Clipador de lives</h2>
-    <span class="badge">Clipes 1 min</span>
-  </div>
-  <p class="descricao">Cole o link de uma live <strong>AO VIVO</strong>. Ela será gravada e cortada automaticamente em clipes de 1 minuto.</p>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#">
+        <span class="logo-box">CL</span>
+        <span>Clipador de lives</span>
+      </a>
+      <a class="btn-topo" href="#url">Colar link</a>
+    </div>
+  </header>
 
-  <div class="campo">
-    <label for="url">Link da transmissão</label>
-    <input id="url" type="url" placeholder="https://...">
-  </div>
+  <main class="wrap">
+    <section class="hero-card">
+      <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
+      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong>, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
 
-  <div class="campo">
-    <label for="min">Tempo máximo de gravação</label>
-    <select id="min">
-      <option value="5">Gravar 5 minutos (teste)</option>
-      <option value="15">Gravar 15 minutos</option>
-      <option value="30">Gravar 30 minutos</option>
-      <option value="60">Gravar 60 minutos</option>
-    </select>
-  </div>
+      <div class="campo">
+        <label for="url">Link da live</label>
+        <input id="url" type="url" placeholder="Cole o link da live (Kick, Twitch, YouTube...)">
+      </div>
 
-  <button id="btn-gravar" onclick="iniciar()">Começar a gravar</button>
+      <div class="campo">
+        <label for="min">Duração da captura</label>
+        <select id="min">
+          <option value="5">Gravar 5 minutos (teste)</option>
+          <option value="15">Gravar 15 minutos</option>
+          <option value="30">Gravar 30 minutos</option>
+          <option value="60">Gravar 60 minutos</option>
+        </select>
+      </div>
 
-  <div class="caixa" id="status">Aguardando link.</div>
-  <div class="caixa" id="lista" style="display:none"></div>
-  <div class="caixa">
-    <span class="diag-titulo">Diagnóstico</span>
-    <pre id="diag">-</pre>
-  </div>
+      <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
+      <div class="meta-linha">Segmentação automática a cada 60 segundos • Download individual ou ZIP</div>
+    </section>
 
-  <p class="aviso">Use só com autorização do streamer ou nas suas próprias lives.</p>
-</div>
+    <div class="caixa" id="status">Aguardando link.</div>
+    <div class="caixa" id="lista" style="display:none"></div>
+    <div class="caixa">
+      <span class="diag-topo">Diagnóstico</span>
+      <pre id="diag">-</pre>
+    </div>
+
+    <section class="preview-card" aria-label="Como funciona">
+      <div class="preview-header">
+        <span class="live-dot">Captura em tempo real</span>
+        <span>Cortes de 01:00</span>
+      </div>
+      <div class="preview-tela">
+        <span class="preview-badge">Fluxo automático</span>
+        <p>O servidor captura o stream da live e divide o arquivo em blocos de 1 minuto prontos para baixar.</p>
+      </div>
+      <div class="timeline">
+        <div class="slot">
+          <strong>00:00 – 01:00</strong>
+          <span>Clipe 1</span>
+        </div>
+        <div class="slot">
+          <strong>01:00 – 02:00</strong>
+          <span>Clipe 2</span>
+        </div>
+        <div class="slot">
+          <strong>02:00 – 03:00</strong>
+          <span>Clipe 3</span>
+        </div>
+      </div>
+    </section>
+
+    <p class="aviso">Use só com autorização do streamer ou nas suas próprias lives.</p>
+  </main>
 
 <script>
 let job = null;
