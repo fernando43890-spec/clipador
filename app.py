@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import threading
@@ -10,6 +11,7 @@ app = Flask(__name__)
 BASE = "/tmp/clipador" if os.path.exists("/tmp") else "."
 os.makedirs(BASE, exist_ok=True)
 JOBS = {}
+JOBS_LOCK = threading.Lock()
 SEG = 60
 
 
@@ -409,6 +411,8 @@ PAGINA = """
 
 <script>
 let job = null;
+let ultimoClipesRenderizado = -1;
+let ultimoJobRenderizado = null;
 
 function plataforma(url) {
   try {
@@ -460,7 +464,7 @@ function linkDe(c) {
 function clipar(i) {
   document.getElementById('url').value = linkDe(CANAIS[i]);
   mostrarPreview();
-  window.scrollTo(0, 0);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function montarLives(lista) {
@@ -481,14 +485,14 @@ async function filtrarOnline() {
       CANAIS.map(async function (c) {
         try {
           const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
-          if (!r.ok) { return {canal: c, status: 'incERTO'}; }
+          if (!r.ok) { return {canal: c, status: 'incerto'}; }
           const d = await r.json();
           if (d && 'livestream' in d) {
             return {canal: c, status: d.livestream ? 'online' : 'offline'};
           }
-          return {canal: c, status: 'incERTO'};
+          return {canal: c, status: 'incerto'};
         } catch (e) {
-          return {canal: c, status: 'incERTO'};
+          return {canal: c, status: 'incerto'};
         }
       })
     );
@@ -513,20 +517,24 @@ async function iniciar() {
   const btn = document.getElementById('btn-gravar');
   if (!url) { return; }
   btn.disabled = true;
+  ultimoClipesRenderizado = -1;
+  document.getElementById('lista').style.display = 'none';
+  document.getElementById('lista').innerHTML = '';
   document.getElementById('status').innerText = 'Iniciando...';
   try {
     const r = await fetch('/iniciar', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({url:url, min:min})
+      body: JSON.stringify({url: url, min: min})
     });
     const d = await r.json();
-    if (!d.id) {
-      document.getElementById('status').innerText = 'Link inválido.';
+    if (!r.ok || !d.id) {
+      document.getElementById('status').innerText = d.erro || 'Link inválido.';
       btn.disabled = false;
       return;
     }
     job = d.id;
+    ultimoJobRenderizado = job;
     checar();
   } catch (e) {
     document.getElementById('status').innerText = 'Erro ao iniciar.';
@@ -534,25 +542,41 @@ async function iniciar() {
   }
 }
 
+function atualizarListaClipes(clipesQtd, jobId) {
+  const lista = document.getElementById('lista');
+  if (clipesQtd <= 0) {
+    lista.style.display = 'none';
+    return;
+  }
+  if (clipesQtd === ultimoClipesRenderizado && jobId === ultimoJobRenderizado) {
+    return;
+  }
+  ultimoClipesRenderizado = clipesQtd;
+  ultimoJobRenderizado = jobId;
+  lista.style.display = 'block';
+  let h = '<a href="/zip/' + jobId + '">Baixar todos em ZIP (' + clipesQtd + ' clipes)</a>';
+  for (let i = 1; i <= clipesQtd; i++) {
+    h += '<a href="/clipe/' + jobId + '/' + i + '">Clipe ' + i + '</a>';
+  }
+  lista.innerHTML = h;
+}
+
 async function checar() {
   if (!job) { return; }
-  const r = await fetch('/status/' + job);
-  const d = await r.json();
-  document.getElementById('status').innerText = d.msg;
-  document.getElementById('diag').innerText = d.diag || '-';
-  const lista = document.getElementById('lista');
-  if (d.clipes > 0) {
-    lista.style.display = 'block';
-    let h = '<a href="/zip/' + job + '">Baixar todos em ZIP (' + d.clipes + ' clipes)</a>';
-    for (let i = 1; i <= d.clipes; i++) {
-      h += '<a href="/clipe/' + job + '/' + i + '">Clipe ' + i + '</a>';
+  try {
+    const r = await fetch('/status/' + job);
+    const d = await r.json();
+    document.getElementById('status').innerText = d.msg || '';
+    document.getElementById('diag').innerText = d.diag || '-';
+    atualizarListaClipes(Number(d.clipes || 0), job);
+
+    if (d.estado !== 'fim' && d.estado !== 'erro') {
+      setTimeout(checar, 3000);
+    } else {
+      document.getElementById('btn-gravar').disabled = false;
     }
-    lista.innerHTML = h;
-  }
-  if (d.estado !== 'fim' && d.estado !== 'erro') {
+  } catch (e) {
     setTimeout(checar, 3000);
-  } else {
-    document.getElementById('btn-gravar').disabled = false;
   }
 }
 </script>
@@ -563,6 +587,8 @@ async function checar() {
 
 def ler_fim(caminho, limite=700):
     try:
+        if not os.path.exists(caminho):
+            return ""
         with open(caminho, "r", errors="ignore") as f:
             texto = f.read()
         texto = texto.replace("\r", "\n")
@@ -571,81 +597,185 @@ def ler_fim(caminho, limite=700):
         return ""
 
 
+def listar_clipes(pasta):
+    if not os.path.isdir(pasta):
+        return []
+    arquivos = []
+    for f in sorted(os.listdir(pasta)):
+        if f.startswith("clipe_") and f.endswith(".mp4"):
+            caminho = os.path.join(pasta, f)
+            if os.path.isfile(caminho) and os.path.getsize(caminho) > 0:
+                arquivos.append(f)
+    return arquivos
+
+
 def tamanho_pasta(pasta):
-    total = 0
-    for f in os.listdir(pasta):
-        if f.startswith("clipe_"):
-            total += os.path.getsize(os.path.join(pasta, f))
-    return total
+    return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta))
+
+
+def atualizar_job(job_id, **campos):
+    with JOBS_LOCK:
+        if job_id in JOBS:
+            JOBS[job_id].update(campos)
+
+
+def extrair_stream(url):
+    cmd_json = ["yt-dlp", "--no-warnings", "-j", "-f", "best[height<=720]/best", url]
+    r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
+    if r.returncode == 0 and r.stdout.strip():
+        for linha in r.stdout.strip().splitlines():
+            try:
+                info = json.loads(linha)
+                stream_url = info.get("url")
+                if stream_url:
+                    headers = info.get("http_headers") or {}
+                    return stream_url, headers, ""
+            except json.JSONDecodeError:
+                continue
+
+    cmd_url = ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url]
+    r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
+    links = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip().startswith("http")]
+    if links:
+        return links[0], {}, ""
+
+    erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
+    return None, {}, erro_msg[-700:]
 
 
 def gravar(job_id, url, minutos):
-    job = JOBS[job_id]
     pasta = os.path.join(BASE, job_id)
     os.makedirs(pasta, exist_ok=True)
-    job["pasta"] = pasta
+    atualizar_job(job_id, pasta=pasta)
+
     padrao = os.path.join(pasta, "clipe_%03d.mp4")
     log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
 
-    job["estado"] = "abrindo"
-    job["msg"] = "Abrindo a live..."
-    job["diag"] = "Rodando yt-dlp..."
-    
-    cmd_url = ["yt-dlp", "-g", "-f", "best[height<=720]/best", url]
+    atualizar_job(
+        job_id,
+        estado="abrindo",
+        msg="Abrindo a live...",
+        diag="Rodando yt-dlp...",
+    )
 
     try:
-        r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
+        stream, headers, erro_yt = extrair_stream(url)
+    except subprocess.TimeoutExpired:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="O yt-dlp demorou demais para responder.",
+            diag="Timeout ao buscar o stream da live.",
+        )
+        return
     except Exception as e:
-        job["estado"] = "erro"
-        job["msg"] = "yt-dlp demorou demasiado ou falhou."
-        job["diag"] = str(e)[-500:]
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="Falha ao executar o yt-dlp.",
+            diag=str(e)[-500:],
+        )
         return
-    links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
-    if not links:
-        job["estado"] = "erro"
-        job["msg"] = "O yt-dlp não conseguiu o link da live."
-        job["diag"] = (r.stderr or "sem mensagem")[-700:]
-        return
-    stream = links[0]
-    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". Iniciando ffmpeg..."
 
-    job["estado"] = "gravando"
-    job["msg"] = "Gravando... 0 clipes prontos"
+    if not stream:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="O yt-dlp não conseguiu o link da live.",
+            diag=erro_yt or "sem mensagem",
+        )
+        return
+
+    user_agent = headers.get(
+        "User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    )
+
+    extra_headers = []
+    for chave, valor in headers.items():
+        if chave.lower() != "user-agent" and valor:
+            extra_headers.extend(["-headers", f"{chave}: {valor}"])
+
+    atualizar_job(
+        job_id,
+        estado="gravando",
+        msg="Gravando... 0 clipes prontos",
+        diag="yt-dlp OK. Iniciando ffmpeg...",
+    )
+
     cmd = [
         "ffmpeg", "-y",
-        "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "-user_agent", user_agent,
+        *extra_headers,
         "-rw_timeout", "15000000",
         "-i", stream,
-        "-t", str(int(minutos) * 60),
+        "-t", str(minutos * 60),
         "-c", "copy",
-        "-f", "segment", "-segment_time", str(SEG),
+        "-f", "segment",
+        "-segment_time", str(SEG),
         "-reset_timestamps", "1",
         padrao,
     ]
-    logf = open(log_ffmpeg, "w")
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
-    inicio = time.time()
-    while proc.poll() is None:
-        feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
-        job["clipes"] = max(0, len(feitos) - 1)
-        tam = tamanho_pasta(pasta)
-        job["msg"] = "Gravando... " + str(job["clipes"]) + " clipes prontos"
-        job["diag"] = ("Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
-                       + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500))
-        if time.time() - inicio > 60 and tam == 0:
+
+    proc = None
+    try:
+        with open(log_ffmpeg, "w") as logf:
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
+            inicio = time.time()
+
+            while proc.poll() is None:
+                feitos = listar_clipes(pasta)
+                # O último arquivo ainda está sendo gravado; só o anterior está fechado
+                clipes_prontos = max(0, len(feitos) - 1)
+                tam = tamanho_pasta(pasta)
+
+                atualizar_job(
+                    job_id,
+                    clipes=clipes_prontos,
+                    msg=f"Gravando... {clipes_prontos} clipes prontos",
+                    diag=(
+                        f"Tempo: {int(time.time() - inicio)}s | Gravado: {tam // 1024} KB\n"
+                        + ler_fim(log_ffmpeg, 500)
+                    ),
+                )
+
+                if time.time() - inicio > 60 and tam == 0:
+                    proc.kill()
+                    proc.wait()
+                    break
+
+                time.sleep(3)
+    except Exception as e:
+        if proc and proc.poll() is None:
             proc.kill()
-            break
-        time.sleep(3)
-    logf.close()
-    feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
-    job["clipes"] = len(feitos)
-    if feitos and tamanho_pasta(pasta) > 0:
-        job["estado"] = "fim"
-        job["msg"] = f"Pronto! {job['clipes']} clipes gerados."
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="Erro durante a gravação com ffmpeg.",
+            diag=str(e)[-500:],
+        )
+        return
+
+    feitos_finais = listar_clipes(pasta)
+    tam_final = tamanho_pasta(pasta)
+    clipes_finais = len(feitos_finais)
+
+    if clipes_finais > 0 and tam_final > 0:
+        atualizar_job(
+            job_id,
+            estado="fim",
+            clipes=clipes_finais,
+            msg=f"Pronto! {clipes_finais} clipes gerados.",
+            diag=f"Total gravado: {tam_final // 1024} KB\n" + ler_fim(log_ffmpeg, 400),
+        )
     else:
-        job["estado"] = "erro"
-        job["msg"] = "Nenhum dado chegou em 60 segundos."
-        job["diag"] = ler_fim(log_ffmpeg, 800)
+        atualizar_job(
+            job_id,
+            estado="erro",
+            clipes=0,
+            msg="Nenhum dado chegou em 60 segundos ou a live não está ativa.",
+            diag=ler_fim(log_ffmpeg, 800) or "Sem saída do ffmpeg.",
+        )
 
 
 @app.route("/")
@@ -655,47 +785,79 @@ def inicio():
 
 @app.route("/iniciar", methods=["POST"])
 def iniciar():
-    dados = request.get_json()
-    url = dados.get("url", "").strip()
-    minutos = int(dados.get("min", 5))
-    if not url.startswith("http"):
-        return jsonify({"id": ""}), 400
+    dados = request.get_json(silent=True) or {}
+    url = str(dados.get("url", "")).strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return jsonify({"id": "", "erro": "Link inválido."}), 400
+
+    try:
+        minutos = int(dados.get("min", 5))
+    except (TypeError, ValueError):
+        minutos = 5
+    minutos = max(1, min(minutos, 180))
+
     job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": ""}
+    with JOBS_LOCK:
+        JOBS[job_id] = {
+            "estado": "iniciando",
+            "msg": "Iniciando...",
+            "clipes": 0,
+            "diag": "",
+            "pasta": "",
+        }
+
     threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
     return jsonify({"id": job_id})
 
 
 @app.route("/status/<job_id>")
 def status(job_id):
-    j = JOBS.get(job_id)
-    if not j:
-        return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
-    return jsonify({"estado": j["estado"], "msg": j["msg"], "clipes": j["clipes"], "diag": j.get("diag", "")})
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        if not j:
+            return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
+        return jsonify({
+            "estado": j["estado"],
+            "msg": j["msg"],
+            "clipes": j["clipes"],
+            "diag": j.get("diag", ""),
+        })
 
 
 @app.route("/clipe/<job_id>/<int:n>")
 def clipe(job_id, n):
-    j = JOBS.get(job_id)
-    if not j:
+    if n < 1:
+        return "Clipe inválido", 400
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        pasta = j.get("pasta") if j else ""
+    if not pasta:
         return "Não encontrado", 404
-    arq = os.path.join(j["pasta"], "clipe_%03d.mp4" % (n - 1))
-    if not os.path.exists(arq):
+
+    arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
+    if not os.path.isfile(arq):
         return "Não encontrado", 404
-    return send_file(arq, as_attachment=True, download_name="clipe_%d.mp4" % n)
+    return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
 
 
 @app.route("/zip/<job_id>")
 def baixar_zip(job_id):
-    j = JOBS.get(job_id)
-    if not j:
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        pasta = j.get("pasta") if j else ""
+    if not pasta:
         return "Não encontrado", 404
-    caminho = os.path.join(BASE, job_id + ".zip")
-    with zipfile.ZipFile(caminho, "w") as z:
-        for f in sorted(os.listdir(j["pasta"])):
-            if f.startswith("clipe_"):
-                z.write(os.path.join(j["pasta"], f), f)
-    return send_file(caminho, as_attachment=True, download_name="clipes.zip")
+
+    arquivos = listar_clipes(pasta)
+    if not arquivos:
+        return "Nenhum clipe disponível", 404
+
+    caminho_zip = os.path.join(BASE, f"{job_id}.zip")
+    with zipfile.ZipFile(caminho_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for f in arquivos:
+            z.write(os.path.join(pasta, f), f)
+
+    return send_file(caminho_zip, as_attachment=True, download_name="clipes.zip")
 
 
 if __name__ == "__main__":
