@@ -315,6 +315,36 @@ PAGINA = """
   .live-item {
     margin-top: 12px;
   }
+  .live-item.destaque {
+    background: var(--surface-2);
+    border: 2px solid var(--kick-verde);
+    border-radius: 16px;
+    padding: 12px;
+    margin-bottom: 14px;
+    box-shadow: 0 0 0 1px rgba(0, 255, 56, 0.25), 0 12px 30px rgba(0, 255, 56, 0.22);
+  }
+  .live-item.destaque .player {
+    border: 1px solid rgba(0, 255, 56, 0.35);
+  }
+  .badge-top {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--kick-verde);
+    color: #0d0a16;
+    font-size: 0.76rem;
+    font-weight: 800;
+    padding: 5px 11px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 14px rgba(0, 255, 56, 0.35);
+  }
+  .viewers-tag {
+    font-size: 0.78rem;
+    color: var(--mutado);
+    font-weight: 500;
+    margin-left: 6px;
+  }
   .live-topo {
     display: flex;
     justify-content: space-between;
@@ -331,10 +361,16 @@ PAGINA = """
     font-weight: 700;
     font-size: .8rem;
     cursor: pointer;
-    transition: filter 0.2s ease;
+    transition: filter 0.2s ease, transform 0.15s ease;
+  }
+  .live-item.destaque .btn-mini {
+    background: var(--kick-brilho);
+    padding: 9px 14px;
+    box-shadow: 0 4px 14px rgba(0, 255, 56, 0.35);
   }
   .btn-mini:hover {
     filter: brightness(1.1);
+    transform: translateY(-1px);
   }
 
   .aviso {
@@ -461,23 +497,40 @@ function linkDe(c) {
   return 'https://kick.com/' + c.canal;
 }
 
+function formatarViewers(n) {
+  if (!n || n <= 0) { return ''; }
+  if (n >= 1000) {
+    return (n / 1000).toFixed(1).replace('.0', '') + 'k espectadores';
+  }
+  return n + ' espectadores';
+}
+
 function clipar(i) {
   document.getElementById('url').value = linkDe(CANAIS[i]);
   mostrarPreview();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function montarLives(lista) {
+function montarLives(lista, comDestaque) {
   let h = '';
-  lista.forEach(function (c) {
+  lista.forEach(function (c, pos) {
     const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
-    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+    const viewers = c.viewers || 0;
+    const isTop = comDestaque && pos === 0 && viewers > 0;
+    const textoViewers = formatarViewers(viewers);
+
+    h += '<div class="live-item' + (isTop ? ' destaque' : '') + '">';
+    if (isTop) {
+      h += '<div class="badge-top">🔥 Mais assistida' + (textoViewers ? ' • ' + textoViewers : '') + '</div>';
+    }
+    h += '<div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+      (!isTop && textoViewers ? '<span class="viewers-tag">(' + textoViewers + ')</span>' : '') +
       '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
       '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
   });
   document.getElementById('lives').innerHTML = h;
 }
-montarLives(CANAIS);
+montarLives(CANAIS, false);
 
 async function filtrarOnline() {
   try {
@@ -485,26 +538,33 @@ async function filtrarOnline() {
       CANAIS.map(async function (c) {
         try {
           const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
-          if (!r.ok) { return {canal: c, status: 'incerto'}; }
+          if (!r.ok) { return {canal: c, status: 'incerto', viewers: 0}; }
           const d = await r.json();
           if (d && 'livestream' in d) {
-            return {canal: c, status: d.livestream ? 'online' : 'offline'};
+            const online = Boolean(d.livestream);
+            const viewers = online ? Number(d.livestream.viewer_count || d.livestream.viewers || 0) : 0;
+            return {
+              canal: Object.assign({}, c, {viewers: viewers}),
+              status: online ? 'online' : 'offline',
+              viewers: viewers
+            };
           }
-          return {canal: c, status: 'incerto'};
+          return {canal: c, status: 'incerto', viewers: 0};
         } catch (e) {
-          return {canal: c, status: 'incerto'};
+          return {canal: c, status: 'incerto', viewers: 0};
         }
       })
     );
     const confirmadosOnline = resultados
       .filter(function (item) { return item.status === 'online'; })
+      .sort(function (a, b) { return b.viewers - a.viewers; })
       .map(function (item) { return item.canal; });
     const confirmadosOffline = resultados.filter(function (item) { return item.status === 'offline'; }).length;
 
     if (confirmadosOnline.length > 0) {
-      montarLives(confirmadosOnline);
+      montarLives(confirmadosOnline, true);
     } else if (confirmadosOffline === CANAIS.length) {
-      montarLives([]);
+      montarLives([], false);
     }
   } catch (e) {}
 }
