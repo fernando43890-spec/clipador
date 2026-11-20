@@ -306,37 +306,6 @@ PAGINA = """
     border-radius: 12px;
     background: #000;
   }
-  .player-espera {
-    width: 100%;
-    aspect-ratio: 16/9;
-    border-radius: 12px;
-    background: #09080e;
-    border: 1px solid var(--borda);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    cursor: pointer;
-    color: var(--mutado);
-    font-size: 0.85rem;
-    transition: border-color 0.2s ease, background 0.2s ease;
-  }
-  .player-espera:hover {
-    border-color: var(--kick-verde);
-    background: #0e0c17;
-    color: var(--texto);
-  }
-  .btn-play-live {
-    background: var(--kick-verde);
-    color: #0d0a16;
-    border: 0;
-    border-radius: 999px;
-    padding: 9px 16px;
-    font-weight: 800;
-    font-size: 0.82rem;
-    cursor: pointer;
-  }
   .player-aviso {
     margin: 8px 0 0;
     font-size: .76rem;
@@ -346,47 +315,12 @@ PAGINA = """
   .live-item {
     margin-top: 12px;
   }
-  .live-item.destaque {
-    background: var(--surface-2);
-    border: 2px solid var(--kick-verde);
-    border-radius: 16px;
-    padding: 12px;
-    margin-bottom: 14px;
-    box-shadow: 0 0 0 1px rgba(0, 255, 56, 0.25), 0 12px 30px rgba(0, 255, 56, 0.22);
-  }
-  .live-item.destaque .player {
-    border: 1px solid rgba(0, 255, 56, 0.35);
-  }
-  .badge-top {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--kick-verde);
-    color: #0d0a16;
-    font-size: 0.76rem;
-    font-weight: 800;
-    padding: 5px 11px;
-    border-radius: 999px;
-    margin-bottom: 10px;
-    box-shadow: 0 4px 14px rgba(0, 255, 56, 0.35);
-  }
-  .viewers-tag {
-    font-size: 0.78rem;
-    color: var(--mutado);
-    font-weight: 500;
-    margin-left: 6px;
-  }
   .live-topo {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 8px;
     font-weight: 700;
-  }
-  .live-acoes {
-    display: flex;
-    align-items: center;
-    gap: 6px;
   }
   .btn-mini {
     background: var(--kick-verde);
@@ -397,21 +331,10 @@ PAGINA = """
     font-weight: 700;
     font-size: .8rem;
     cursor: pointer;
-    transition: filter 0.2s ease, transform 0.15s ease;
-  }
-  .btn-mini.secundario {
-    background: var(--surface-2);
-    color: var(--texto);
-    border: 1px solid var(--borda-forte);
-  }
-  .live-item.destaque .btn-mini {
-    background: var(--kick-brilho);
-    padding: 9px 14px;
-    box-shadow: 0 4px 14px rgba(0, 255, 56, 0.35);
+    transition: filter 0.2s ease;
   }
   .btn-mini:hover {
     filter: brightness(1.1);
-    transform: translateY(-1px);
   }
 
   .aviso {
@@ -490,7 +413,6 @@ PAGINA = """
 let job = null;
 let ultimoClipesRenderizado = -1;
 let ultimoJobRenderizado = null;
-const livesCarregadas = new Set();
 
 function plataforma(url) {
   try {
@@ -539,60 +461,24 @@ function linkDe(c) {
   return 'https://kick.com/' + c.canal;
 }
 
-function formatarViewers(n) {
-  if (!n || n <= 0) { return ''; }
-  if (n >= 1000) {
-    return (n / 1000).toFixed(1).replace('.0', '') + 'k espectadores';
-  }
-  return n + ' espectadores';
-}
-
 function clipar(i) {
   document.getElementById('url').value = linkDe(CANAIS[i]);
   mostrarPreview();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function darPlayLive(canal) {
-  livesCarregadas.add(canal);
-  const slot = document.getElementById('player-slot-' + canal);
-  if (!slot) { return; }
-  slot.innerHTML = '<iframe class="player" src="https://player.kick.com/' + canal + '?autoplay=true" allowfullscreen allow="autoplay; fullscreen"></iframe>';
-  const btn = document.getElementById('btn-play-' + canal);
-  if (btn) { btn.style.display = 'none'; }
-}
-
-function montarLives(lista, comDestaque) {
+function montarLives(lista) {
   let h = '';
-  lista.forEach(function (c, pos) {
+  lista.forEach(function (c, index) {
     const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
-    const viewers = c.viewers || 0;
-    const isTop = comDestaque && pos === 0 && viewers > 0;
-    const textoViewers = formatarViewers(viewers);
-    const deveCarregar = isTop || livesCarregadas.has(c.canal);
-
-    h += '<div class="live-item' + (isTop ? ' destaque' : '') + '">';
-    if (isTop) {
-      h += '<div class="badge-top">🔥 Mais assistida' + (textoViewers ? ' • ' + textoViewers : '') + '</div>';
-    }
-    h += '<div class="live-topo"><span><span class="ponto"></span>' + c.nome +
-      (!isTop && textoViewers ? '<span class="viewers-tag">(' + textoViewers + ')</span>' : '') +
-      '</span><div class="live-acoes">';
-    if (!deveCarregar) {
-      h += '<button id="btn-play-' + c.canal + '" class="btn-mini secundario" onclick="darPlayLive(\'' + c.canal + '\')">Play</button>';
-    }
-    h += '<button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div></div>' +
-      '<div id="player-slot-' + c.canal + '">';
-    if (deveCarregar) {
-      h += '<iframe class="player" src="' + embedDe(c, isTop) + '" allowfullscreen allow="autoplay; fullscreen"></iframe>';
-    } else {
-      h += '<div class="player-espera" onclick="darPlayLive(\'' + c.canal + '\')"><button type="button" class="btn-play-live">▶ Dar play na live</button><span>Carrega somente ao clicar</span></div>';
-    }
-    h += '</div></div>';
+    const isPrincipal = index === 0;
+    const iframeSrc = embedDe(c, isPrincipal);
+    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+      '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
+      '<iframe class="player" src="' + iframeSrc + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
   });
   document.getElementById('lives').innerHTML = h;
 }
-montarLives(CANAIS, false);
 
 async function filtrarOnline() {
   try {
@@ -602,34 +488,36 @@ async function filtrarOnline() {
           const r = await fetch('https://kick.com/api/v2/channels/' + c.canal);
           if (!r.ok) { return {canal: c, status: 'incerto', viewers: 0}; }
           const d = await r.json();
-          if (d && 'livestream' in d) {
-            const online = Boolean(d.livestream);
-            const viewers = online ? Number(d.livestream.viewer_count || d.livestream.viewers || 0) : 0;
+          if (d && 'livestream' in d && d.livestream) {
+            const viewers = Number(d.livestream.viewer_count || 0);
             return {
               canal: Object.assign({}, c, {viewers: viewers}),
-              status: online ? 'online' : 'offline',
+              status: 'online',
               viewers: viewers
             };
           }
-          return {canal: c, status: 'incerto', viewers: 0};
+          return {canal: c, status: 'offline', viewers: 0};
         } catch (e) {
           return {canal: c, status: 'incerto', viewers: 0};
         }
       })
     );
-    const confirmadosOnline = resultados
+
+    const onlineOrdenados = resultados
       .filter(function (item) { return item.status === 'online'; })
       .sort(function (a, b) { return b.viewers - a.viewers; })
       .map(function (item) { return item.canal; });
-    const confirmadosOffline = resultados.filter(function (item) { return item.status === 'offline'; }).length;
+      
+    const todasOffline = resultados.every(function (item) { return item.status === 'offline'; });
 
-    if (confirmadosOnline.length > 0) {
-      montarLives(confirmadosOnline, true);
-    } else if (confirmadosOffline === CANAIS.length) {
-      montarLives([], false);
+    if (onlineOrdenados.length > 0) {
+      montarLives(onlineOrdenados);
+    } else if (todasOffline) {
+      montarLives([]);
     }
   } catch (e) {}
 }
+
 filtrarOnline();
 setInterval(filtrarOnline, 30000);
 
