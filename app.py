@@ -168,6 +168,9 @@ PAGINA = """
   .ponto{display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff5a4d;margin-right:8px}
   .player{width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000}
   .player-aviso{margin:8px 0 0;font-size:.76rem;color:var(--mutado)}
+  .live-item{margin-top:12px}
+  .live-topo{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700}
+  .btn-mini{background:var(--roxo);color:#0d0a16;border:0;border-radius:10px;padding:8px 12px;font-weight:700;font-size:.8rem}
 
 </style>
 </head>
@@ -201,6 +204,10 @@ PAGINA = """
       </div>
       <iframe id="player" class="player" allowfullscreen allow="autoplay; fullscreen"></iframe>
       <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
+    </section>
+    <section class="caixa" id="lives-box">
+      <span class="diag-topo">Lives agora</span>
+      <div id="lives"></div>
     </section>
 
     <div class="caixa" id="status">Aguardando link.</div>
@@ -295,153 +302,40 @@ function mostrarPreview() {
   }
 }
 document.getElementById('url').addEventListener('input', mostrarPreview);
+const CANAIS = [
+  {nome: 'Coringa', plat: 'kick', canal: 'coringa'},
+  {nome: 'Gabepeixe', plat: 'kick', canal: 'gabepeixe'}
+];
+
+function embedDe(c) {
+  if (c.plat === 'twitch') {
+    return 'https://player.twitch.tv/?channel=' + c.canal + '&parent=' + location.hostname + '&muted=true';
+  }
+  return 'https://player.kick.com/' + c.canal + '?autoplay=true&muted=true';
+}
+
+function linkDe(c) {
+  return (c.plat === 'twitch' ? 'https://twitch.tv/' : 'https://kick.com/') + c.canal;
+}
+
+function clipar(i) {
+  document.getElementById('url').value = linkDe(CANAIS[i]);
+  mostrarPreview();
+  window.scrollTo(0, 0);
+}
+
+function montarLives() {
+  let h = '';
+  CANAIS.forEach(function (c, i) {
+    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + c.nome +
+      '</span><button class="btn-mini" onclick="clipar(' + i + ')">Usar esta live</button></div>' +
+      '<iframe class="player" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe></div>';
+  });
+  document.getElementById('lives').innerHTML = h;
+}
+montarLives();
+
 </script>
 </body>
 </html>
-"""
-
-
-def ler_fim(caminho, limite=700):
-    try:
-        with open(caminho, "r", errors="ignore") as f:
-            texto = f.read()
-        texto = texto.replace("\r", "\n")
-        return texto[-limite:]
-    except Exception:
-        return ""
-
-
-def tamanho_pasta(pasta):
-    total = 0
-    for f in os.listdir(pasta):
-        if f.startswith("clipe_"):
-            total += os.path.getsize(os.path.join(pasta, f))
-    return total
-
-
-def gravar(job_id, url, minutos):
-    job = JOBS[job_id]
-    pasta = os.path.join(BASE, job_id)
-    os.makedirs(pasta, exist_ok=True)
-    job["pasta"] = pasta
-    padrao = os.path.join(pasta, "clipe_%03d.mp4")
-    log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
-
-    job["estado"] = "abrindo"
-    job["msg"] = "A abrir a live..."
-    job["diag"] = "A executar yt-dlp..."
-    cmd_url = ["yt-dlp", "-g", "-f", "best[height<=720]/best", url]
-    try:
-        r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
-    except Exception as e:
-        job["estado"] = "erro"
-        job["msg"] = "yt-dlp demorou demasiado ou falhou."
-        job["diag"] = str(e)[-500:]
-        return
-    links = [l for l in r.stdout.strip().split("\n") if l.startswith("http")]
-    if not links:
-        job["estado"] = "erro"
-        job["msg"] = "O yt-dlp não conseguiu obter o link da live."
-        job["diag"] = (r.stderr or "sem mensagem")[-700:]
-        return
-    stream = links[0]
-    job["diag"] = "yt-dlp OK. Links: " + str(len(links)) + ". A iniciar ffmpeg..."
-
-    job["estado"] = "gravando"
-    job["msg"] = "A gravar... 0 clipes prontos"
-    cmd = [
-        "ffmpeg", "-y",
-        "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        "-rw_timeout", "15000000",
-        "-i", stream,
-        "-t", str(int(minutos) * 60),
-        "-c", "copy",
-        "-f", "segment", "-segment_time", str(SEG),
-        "-reset_timestamps", "1",
-        padrao,
-    ]
-    logf = open(log_ffmpeg, "w")
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
-    inicio = time.time()
-    while proc.poll() is None:
-        feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
-        job["clipes"] = max(0, len(feitos) - 1)
-        tam = tamanho_pasta(pasta)
-        job["msg"] = "A gravar... " + str(job["clipes"]) + " clipes prontos"
-        job["diag"] = (
-            "Tempo: " + str(int(time.time() - inicio)) + "s | Gravado: "
-            + str(tam // 1024) + " KB\n" + ler_fim(log_ffmpeg, 500)
-        )
-        if time.time() - inicio > 60 and tam == 0:
-            proc.kill()
-            break
-        time.sleep(3)
-    logf.close()
-    feitos = sorted(f for f in os.listdir(pasta) if f.startswith("clipe_"))
-    job["clipes"] = len(feitos)
-    if feitos and tamanho_pasta(pasta) > 0:
-        job["estado"] = "fim"
-        job["msg"] = "Pronto! " + str(len(feitos)) + " clipes gerados."
-    else:
-        job["estado"] = "erro"
-        job["msg"] = "Nenhum dado chegou em 60 segundos."
-        job["diag"] = ler_fim(log_ffmpeg, 800)
-
-
-@app.route("/")
-def inicio():
-    return render_template_string(PAGINA)
-
-
-@app.route("/iniciar", methods=["POST"])
-def iniciar():
-    dados = request.get_json() or {}
-    url = dados.get("url", "").strip()
-    minutos = int(dados.get("min", 5))
-    if not url.startswith("http"):
-        return jsonify({"id": ""}), 400
-    job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"estado": "iniciando", "msg": "A iniciar...", "clipes": 0, "diag": ""}
-    threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
-    return jsonify({"id": job_id})
-
-
-@app.route("/status/<job_id>")
-def status(job_id):
-    j = JOBS.get(job_id)
-    if not j:
-        return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
-    return jsonify({
-        "estado": j["estado"],
-        "msg": j["msg"],
-        "clipes": j["clipes"],
-        "diag": j.get("diag", ""),
-    })
-
-
-@app.route("/clipe/<job_id>/<int:n>")
-def clipe(job_id, n):
-    j = JOBS.get(job_id)
-    if not j:
-        return "Não encontrado", 404
-    arq = os.path.join(j["pasta"], "clipe_%03d.mp4" % (n - 1))
-    if not os.path.exists(arq):
-        return "Não encontrado", 404
-    return send_file(arq, as_attachment=True, download_name="clipe_%d.mp4" % n)
-
-
-@app.route("/zip/<job_id>")
-def baixar_zip(job_id):
-    j = JOBS.get(job_id)
-    if not j:
-        return "Não encontrado", 404
-    caminho = os.path.join(BASE, job_id + ".zip")
-    with zipfile.ZipFile(caminho, "w") as z:
-        for f in sorted(os.listdir(j["pasta"])):
-            if f.startswith("clipe_"):
-                z.write(os.path.join(j["pasta"], f), f)
-    return send_file(caminho, as_attachment=True, download_name="clipes.zip")
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+ 
