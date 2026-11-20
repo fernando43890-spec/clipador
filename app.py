@@ -1,4 +1,3 @@
-Aqui está o código atualizado. Ajustei a exibição da live mais assistida para incluir um texto claro convidando a assistir e mostrando o número exato de espectadores em tempo real.```python
 import json
 import os
 import subprocess
@@ -7,12 +6,14 @@ import time
 import uuid
 import zipfile
 from flask import Flask, request, send_file, render_template_string, jsonify
-app = Flask(name)
+
+app = Flask(__name__)
 BASE = "/tmp/clipador" if os.path.exists("/tmp") else "."
 os.makedirs(BASE, exist_ok=True)
 JOBS = {}
 JOBS_LOCK = threading.Lock()
 SEG = 60
+
 PAGINA = """
 <!doctype html>
 <html lang="pt-br">
@@ -399,6 +400,10 @@ text-align: center;
 margin: 18px 0 0;
 line-height: 1.45;
 }
+.aviso a {
+color: var(--mutado);
+text-decoration: underline;
+}
 </style>
 </head>
 <body>
@@ -453,7 +458,7 @@ line-height: 1.45;
 <span class="diag-topo">Lives agora na Kick</span>
 <div id="lives"></div>
 </section>
-<p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
+<p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.<br><a href="/terms">Termos de Serviço</a> · <a href="/privacy">Política de Privacidade</a></p>
 </main>
 <script>
 let job = null;
@@ -661,235 +666,325 @@ setTimeout(checar, 3000);
 </body>
 </html>
 """
+
+PAGINA_LEGAL = """
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ titulo }} - Clipador de lives</title>
+<style>
+body {
+margin: 0;
+min-height: 100vh;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+background: #07060b;
+color: #f5f3ff;
+padding: 24px 16px;
+}
+.box {
+max-width: 640px;
+margin: 0 auto;
+background: #12101a;
+border: 1px solid rgba(168, 130, 255, 0.25);
+border-radius: 18px;
+padding: 22px;
+line-height: 1.55;
+}
+h1 { margin-top: 0; font-size: 1.4rem; }
+p { color: #c7c1de; font-size: 0.95rem; }
+a { color: #00ff38; text-decoration: none; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="box">
+<h1>{{ titulo }}</h1>
+<p>{{ texto }}</p>
+<p><a href="/">← Voltar para o Clipador de lives</a></p>
+</div>
+</body>
+</html>
+"""
+
+
 def ler_fim(caminho, limite=700):
-try:
-if not os.path.exists(caminho):
-return ""
-with open(caminho, "r", errors="ignore") as f:
-texto = f.read()
-texto = texto.replace("\r", "\n")
-return texto[-limite:]
-except Exception:
-return ""
+    try:
+        if not os.path.exists(caminho):
+            return ""
+        with open(caminho, "r", errors="ignore") as f:
+            texto = f.read()
+        texto = texto.replace("\r", "\n")
+        return texto[-limite:]
+    except Exception:
+        return ""
+
+
 def listar_clipes(pasta):
-if not os.path.isdir(pasta):
-return []
-arquivos = []
-for f in sorted(os.listdir(pasta)):
-if f.startswith("clipe_") and f.endswith(".mp4"):
-caminho = os.path.join(pasta, f)
-if os.path.isfile(caminho) and os.path.getsize(caminho) > 0:
-arquivos.append(f)
-return arquivos
+    if not os.path.isdir(pasta):
+        return []
+    arquivos = []
+    for f in sorted(os.listdir(pasta)):
+        if f.startswith("clipe_") and f.endswith(".mp4"):
+            caminho = os.path.join(pasta, f)
+            if os.path.isfile(caminho) and os.path.getsize(caminho) > 0:
+                arquivos.append(f)
+    return arquivos
+
+
 def tamanho_pasta(pasta):
-return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta))
+    return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta))
+
+
 def atualizar_job(job_id, campos):
-with JOBS_LOCK:
-if job_id in JOBS:
-JOBS[job_id].update(campos)
+    with JOBS_LOCK:
+        if job_id in JOBS:
+            JOBS[job_id].update(campos)
+
+
 def extrair_stream(url):
-cmd_json = ["yt-dlp", "--no-warnings", "-j", "-f", "best[height<=720]/best", url]
-r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
-if r.returncode == 0 and r.stdout.strip():
-for linha in r.stdout.strip().splitlines():
-try:
-info = json.loads(linha)
-stream_url = info.get("url")
-if stream_url:
-headers = info.get("http_headers") or {}
-return stream_url, headers, ""
-except json.JSONDecodeError:
-continue
-cmd_url = ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url]
-r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
-links = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip().startswith("http")]
-if links:
-return links[0], {}, ""
-erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
-return None, {}, erro_msg[-700:]
+    cmd_json = ["yt-dlp", "--no-warnings", "-j", "-f", "best[height<=720]/best", url]
+    r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
+    if r.returncode == 0 and r.stdout.strip():
+        for linha in r.stdout.strip().splitlines():
+            try:
+                info = json.loads(linha)
+                stream_url = info.get("url")
+                if stream_url:
+                    headers = info.get("http_headers") or {}
+                    return stream_url, headers, ""
+            except json.JSONDecodeError:
+                continue
+    cmd_url = ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url]
+    r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
+    links = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip().startswith("http")]
+    if links:
+        return links[0], {}, ""
+    erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
+    return None, {}, erro_msg[-700:]
+
+
 def gravar(job_id, url, minutos):
-pasta = os.path.join(BASE, job_id)
-os.makedirs(pasta, exist_ok=True)
-atualizar_job(job_id, pasta=pasta)
-padrao = os.path.join(pasta, "clipe_%03d.mp4")
-log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
-atualizar_job(
-job_id,
-estado="abrindo",
-msg="Abrindo a live...",
-diag="Rodando yt-dlp...",
-)
-try:
-stream, headers, erro_yt = extrair_stream(url)
-except subprocess.TimeoutExpired:
-atualizar_job(
-job_id,
-estado="erro",
-msg="O yt-dlp demorou demais para responder.",
-diag="Timeout ao buscar o stream da live.",
-)
-return
-except Exception as e:
-atualizar_job(
-job_id,
-estado="erro",
-msg="Falha ao executar o yt-dlp.",
-diag=str(e)[-500:],
-)
-return
-if not stream:
-atualizar_job(
-job_id,
-estado="erro",
-msg="O yt-dlp não conseguiu o link da live.",
-diag=erro_yt or "sem mensagem",
-)
-return
-user_agent = headers.get(
-"User-Agent",
-"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-)
-extra_headers = []
-for chave, valor in headers.items():
-if chave.lower() != "user-agent" and valor:
-extra_headers.extend(["-headers", f"{chave}: {valor}"])
-atualizar_job(
-job_id,
-estado="gravando",
-msg="Gravando... 0 clipes prontos",
-diag="yt-dlp OK. Iniciando ffmpeg...",
-)
-cmd = [
-"ffmpeg", "-y",
-"-user_agent", user_agent,
-*extra_headers,
-"-rw_timeout", "15000000",
-"-i", stream,
-"-t", str(minutos * 60),
-"-c", "copy",
-"-f", "segment",
-"-segment_time", str(SEG),
-"-reset_timestamps", "1",
-padrao,
-]
-proc = None
-try:
-with open(log_ffmpeg, "w") as logf:
-proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
-inicio = time.time()
-while proc.poll() is None:
-feitos = listar_clipes(pasta)
-# O último arquivo ainda está sendo gravado; só o anterior está fechado
-clipes_prontos = max(0, len(feitos) - 1)
-tam = tamanho_pasta(pasta)
-atualizar_job(
-job_id,
-clipes=clipes_prontos,
-msg=f"Gravando... {clipes_prontos} clipes prontos",
-diag=(
-f"Tempo: {int(time.time() - inicio)}s | Gravado: {tam // 1024} KB\n"
-+ ler_fim(log_ffmpeg, 500)
-),
-)
-if time.time() - inicio > 60 and tam == 0:
-proc.kill()
-proc.wait()
-break
-time.sleep(3)
-except Exception as e:
-if proc and proc.poll() is None:
-proc.kill()
-atualizar_job(
-job_id,
-estado="erro",
-msg="Erro durante a gravação com ffmpeg.",
-diag=str(e)[-500:],
-)
-return
-feitos_finais = listar_clipes(pasta)
-tam_final = tamanho_pasta(pasta)
-clipes_finais = len(feitos_finais)
-if clipes_finais > 0 and tam_final > 0:
-atualizar_job(
-job_id,
-estado="fim",
-clipes=clipes_finais,
-msg=f"Pronto! {clipes_finais} clipes gerados.",
-diag=f"Total gravado: {tam_final // 1024} KB\n" + ler_fim(log_ffmpeg, 400),
-)
-else:
-atualizar_job(
-job_id,
-estado="erro",
-clipes=0,
-msg="Nenhum dado chegou em 60 segundos ou a live não está ativa.",
-diag=ler_fim(log_ffmpeg, 800) or "Sem saída do ffmpeg.",
-)
+    pasta = os.path.join(BASE, job_id)
+    os.makedirs(pasta, exist_ok=True)
+    atualizar_job(job_id, pasta=pasta)
+    padrao = os.path.join(pasta, "clipe_%03d.mp4")
+    log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
+    atualizar_job(
+        job_id,
+        estado="abrindo",
+        msg="Abrindo a live...",
+        diag="Rodando yt-dlp...",
+    )
+    try:
+        stream, headers, erro_yt = extrair_stream(url)
+    except subprocess.TimeoutExpired:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="O yt-dlp demorou demais para responder.",
+            diag="Timeout ao buscar o stream da live.",
+        )
+        return
+    except Exception as e:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="Falha ao executar o yt-dlp.",
+            diag=str(e)[-500:],
+        )
+        return
+    if not stream:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="O yt-dlp não conseguiu o link da live.",
+            diag=erro_yt or "sem mensagem",
+        )
+        return
+    user_agent = headers.get(
+        "User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    )
+    extra_headers = []
+    for chave, valor in headers.items():
+        if chave.lower() != "user-agent" and valor:
+            extra_headers.extend(["-headers", f"{chave}: {valor}"])
+    atualizar_job(
+        job_id,
+        estado="gravando",
+        msg="Gravando... 0 clipes prontos",
+        diag="yt-dlp OK. Iniciando ffmpeg...",
+    )
+    cmd = [
+        "ffmpeg", "-y",
+        "-user_agent", user_agent,
+        *extra_headers,
+        "-rw_timeout", "15000000",
+        "-i", stream,
+        "-t", str(minutos * 60),
+        "-c", "copy",
+        "-f", "segment",
+        "-segment_time", str(SEG),
+        "-reset_timestamps", "1",
+        padrao,
+    ]
+    proc = None
+    try:
+        with open(log_ffmpeg, "w") as logf:
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
+            inicio = time.time()
+            while proc.poll() is None:
+                feitos = listar_clipes(pasta)
+                clipes_prontos = max(0, len(feitos) - 1)
+                tam = tamanho_pasta(pasta)
+                atualizar_job(
+                    job_id,
+                    clipes=clipes_prontos,
+                    msg=f"Gravando... {clipes_prontos} clipes prontos",
+                    diag=(
+                        f"Tempo: {int(time.time() - inicio)}s | Gravado: {tam // 1024} KB\n"
+                        + ler_fim(log_ffmpeg, 500)
+                    ),
+                )
+                if time.time() - inicio > 60 and tam == 0:
+                    proc.kill()
+                    proc.wait()
+                    break
+                time.sleep(3)
+    except Exception as e:
+        if proc and proc.poll() is None:
+            proc.kill()
+        atualizar_job(
+            job_id,
+            estado="erro",
+            msg="Erro durante a gravação com ffmpeg.",
+            diag=str(e)[-500:],
+        )
+        return
+    feitos_finais = listar_clipes(pasta)
+    tam_final = tamanho_pasta(pasta)
+    clipes_finais = len(feitos_finais)
+    if clipes_finais > 0 and tam_final > 0:
+        atualizar_job(
+            job_id,
+            estado="fim",
+            clipes=clipes_finais,
+            msg=f"Pronto! {clipes_finais} clipes gerados.",
+            diag=f"Total gravado: {tam_final // 1024} KB\n" + ler_fim(log_ffmpeg, 400),
+        )
+    else:
+        atualizar_job(
+            job_id,
+            estado="erro",
+            clipes=0,
+            msg="Nenhum dado chegou em 60 segundos ou a live não está ativa.",
+            diag=ler_fim(log_ffmpeg, 800) or "Sem saída do ffmpeg.",
+        )
+
+
 @app.route("/")
 def inicio():
-return render_template_string(PAGINA)
+    return render_template_string(PAGINA)
+
+
+@app.route("/terms")
+def terms():
+    return render_template_string(
+        PAGINA_LEGAL,
+        titulo="Termos de Serviço",
+        texto=(
+            "O Clipador de lives permite gerar clipes de transmissões ao vivo e facilitar "
+            "a publicação em plataformas conectadas mediante autorização do usuário. "
+            "Você concorda em utilizar o serviço apenas com conteúdo próprio ou devidamente "
+            "autorizado e em conformidade com as políticas das plataformas de destino."
+        ),
+    )
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template_string(
+        PAGINA_LEGAL,
+        titulo="Política de Privacidade",
+        texto=(
+            "O Clipador de lives processa os links e arquivos de vídeo temporariamente "
+            "para gerar os clipes solicitados. Não vendemos dados pessoais a terceiros e "
+            "utilizamos credenciais ou autorizações apenas para as ações explicitamente "
+            "solicitadas por você na aplicação."
+        ),
+    )
+
+
 @app.route("/iniciar", methods=["POST"])
 def iniciar():
-dados = request.get_json(silent=True) or {}
-url = str(dados.get("url", "")).strip()
-if not (url.startswith("http://") or url.startswith("https://")):
-return jsonify({"id": "", "erro": "Link inválido."}), 400
-try:
-minutos = int(dados.get("min", 5))
-except (TypeError, ValueError):
-minutos = 5
-minutos = max(1, min(minutos, 180))
-job_id = uuid.uuid4().hex[:8]
-with JOBS_LOCK:
-JOBS[job_id] = {
-"estado": "iniciando",
-"msg": "Iniciando...",
-"clipes": 0,
-"diag": "",
-"pasta": "",
-}
-threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
-return jsonify({"id": job_id})
+    dados = request.get_json(silent=True) or {}
+    url = str(dados.get("url", "")).strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return jsonify({"id": "", "erro": "Link inválido."}), 400
+    try:
+        minutos = int(dados.get("min", 5))
+    except (TypeError, ValueError):
+        minutos = 5
+    minutos = max(1, min(minutos, 180))
+    job_id = uuid.uuid4().hex[:8]
+    with JOBS_LOCK:
+        JOBS[job_id] = {
+            "estado": "iniciando",
+            "msg": "Iniciando...",
+            "clipes": 0,
+            "diag": "",
+            "pasta": "",
+        }
+    threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
+    return jsonify({"id": job_id})
+
+
 @app.route("/status/<job_id>")
 def status(job_id):
-with JOBS_LOCK:
-j = JOBS.get(job_id)
-if not j:
-return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
-return jsonify({
-"estado": j["estado"],
-"msg": j["msg"],
-"clipes": j["clipes"],
-"diag": j.get("diag", ""),
-})
-@app.route("/clipe/<job_id>/int:n")
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        if not j:
+            return jsonify({"estado": "erro", "msg": "Tarefa não encontrada", "clipes": 0, "diag": ""})
+        return jsonify({
+            "estado": j["estado"],
+            "msg": j["msg"],
+            "clipes": j["clipes"],
+            "diag": j.get("diag", ""),
+        })
+
+
+@app.route("/clipe/<job_id>/<int:n>")
 def clipe(job_id, n):
-if n < 1:
-return "Clipe inválido", 400
-with JOBS_LOCK:
-j = JOBS.get(job_id)
-pasta = j.get("pasta") if j else ""
-if not pasta:
-return "Não encontrado", 404
-arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
-if not os.path.isfile(arq):
-return "Não encontrado", 404
-return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
+    if n < 1:
+        return "Clipe inválido", 400
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        pasta = j.get("pasta") if j else ""
+    if not pasta:
+        return "Não encontrado", 404
+    arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
+    if not os.path.isfile(arq):
+        return "Não encontrado", 404
+    return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
+
+
 @app.route("/zip/<job_id>")
 def baixar_zip(job_id):
-with JOBS_LOCK:
-j = JOBS.get(job_id)
-pasta = j.get("pasta") if j else ""
-if not pasta:
-return "Não encontrado", 404
-arquivos = listar_clipes(pasta)
-if not arquivos:
-return "Nenhum clipe disponível", 404
-caminho_zip = os.path.join(BASE, f"{job_id}.zip")
-with zipfile.ZipFile(caminho_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-for f in arquivos:
-z.write(os.path.join(pasta, f), f)
-return send_file(caminho_zip, as_attachment=True, download_name="clipes.zip")
-if name == "main":
-app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        pasta = j.get("pasta") if j else ""
+    if not pasta:
+        return "Não encontrado", 404
+    arquivos = listar_clipes(pasta)
+    if not arquivos:
+        return "Nenhum clipe disponível", 404
+    caminho_zip = os.path.join(BASE, f"{job_id}.zip")
+    with zipfile.ZipFile(caminho_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for f in arquivos:
+            z.write(os.path.join(pasta, f), f)
+    return send_file(caminho_zip, as_attachment=True, download_name="clipes.zip")
 
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
