@@ -30,8 +30,6 @@ PAGINA = """
     --borda-forte: rgba(168, 130, 255, 0.34);
     --kick-verde: #00ff38;
     --kick-brilho: #66ff88;
-    --yt-vermelho: #ff0000;
-    --yt-brilho: #ff4d4d;
     --texto: #f5f3ff;
     --mutado: #a69ec2;
     --vivo: #ef4444;
@@ -95,7 +93,7 @@ PAGINA = """
     align-items: center;
     justify-content: center;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(0, 255, 56, 0.3);
   }
 
   .logo-box svg {
@@ -254,9 +252,9 @@ PAGINA = """
 
   #lista a:first-child {
     margin-top: 0;
-    background: rgba(255, 0, 0, 0.22);
-    border-color: rgba(255, 0, 0, 0.4);
-    color: var(--yt-brilho);
+    background: rgba(0, 255, 56, 0.22);
+    border-color: var(--kick-brilho);
+    color: var(--kick-brilho);
     font-weight: 700;
   }
 
@@ -352,15 +350,8 @@ PAGINA = """
       <a class="brand" href="#">
         <span class="logo-box">
           <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#00ff38" />
-                <stop offset="100%" stop-color="#ff0000" />
-              </linearGradient>
-            </defs>
-            <rect x="12" y="25" width="46" height="50" rx="6" stroke="url(#logoGrad)" stroke-width="8"/>
-            <path d="M42 43L66 57L42 71V43Z" fill="url(#logoGrad)"/>
-            <path d="M78 25C84.6274 25 90 30.3726 90 37V63C90 69.6274 84.6274 75 78 75V75" stroke="#ff0000" stroke-width="8" stroke-linecap="round"/>
+            <path d="M15 20H35L55 50L35 80H15L35 50L15 20Z" fill="#00ff38"/>
+            <path d="M45 20H65L85 50L65 80H45L65 50L45 20Z" fill="#00ff38" opacity="0.7"/>
           </svg>
         </span>
         <span>Clipador de lives</span>
@@ -372,11 +363,11 @@ PAGINA = """
   <main class="wrap">
     <section class="hero-card">
       <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
-      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong>, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
+      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
 
       <div class="campo">
         <label for="url">Link da live</label>
-        <input id="url" type="url" placeholder="Cole o link da live (Kick, YouTube...)">
+        <input id="url" type="url" placeholder="Cole o link da Kick...">
       </div>
 
       <div class="campo">
@@ -409,7 +400,7 @@ PAGINA = """
     </div>
 
     <section class="caixa" id="lives-box">
-      <span class="diag-topo">Lives agora</span>
+      <span class="diag-topo">Lives agora na Kick</span>
       <div id="lives"></div>
     </section>
 
@@ -426,17 +417,6 @@ function plataforma(url) {
     const partes = u.pathname.split('/').filter(Boolean);
     if ((host === 'kick.com' || host === 'kzl.ink') && partes[0]) {
       return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
-    }
-    if ((host === 'youtube.com' || host === 'youtu.be')) {
-      let videoId = '';
-      if (host === 'youtu.be') {
-        videoId = partes[0];
-      } else if (partes[0] === 'live' || partes[0] === 'watch') {
-        videoId = u.searchParams.get('v');
-      }
-      if (videoId) {
-        return {nome: 'YouTube', embed: 'https://www.youtube.com/embed/' + videoId + '?autoplay=1'};
-      }
     }
   } catch (e) {}
   return null;
@@ -467,16 +447,10 @@ const CANAIS = [
 ];
 
 function embedDe(c) {
-  if (c.plat === 'youtube') {
-    return 'https://www.youtube.com/embed/' + c.canal + '?autoplay=1';
-  }
   return 'https://player.kick.com/' + c.canal + '?autoplay=true';
 }
 
 function linkDe(c) {
-  if (c.plat === 'youtube') {
-    return 'https://www.youtube.com/watch?v=' + c.canal;
-  }
   return 'https://kick.com/' + c.canal;
 }
 
@@ -580,7 +554,9 @@ def gravar(job_id, url, minutos):
     job["estado"] = "abrindo"
     job["msg"] = "Abrindo a live..."
     job["diag"] = "Rodando yt-dlp..."
+    
     cmd_url = ["yt-dlp", "-g", "-f", "best[height<=720]/best", url]
+
     try:
         r = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
     except Exception as e:
@@ -629,7 +605,7 @@ def gravar(job_id, url, minutos):
     job["clipes"] = len(feitos)
     if feitos and tamanho_pasta(pasta) > 0:
         job["estado"] = "fim"
-        job["msg"] = "Pronto! " + str(len(feitos)) + " clipes gerados."
+        job["msg"] = f"Pronto! {job['clipes']} clipes gerados."
     else:
         job["estado"] = "erro"
         job["msg"] = "Nenhum dado chegou em 60 segundos."
