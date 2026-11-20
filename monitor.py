@@ -22,13 +22,14 @@ def verificar_canal(canal):
         "yt-dlp",
         "--skip-download",
         "--no-warnings",
+        "--no-playlist",
         "-g",
         "-f",
         "best[height<=720]/best",
         canal["url"],
     ]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=35)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
         links = [
             linha.strip()
             for linha in r.stdout.splitlines()
@@ -63,8 +64,11 @@ def guardar_lives(dados):
 
 def loop_monitor():
     while True:
-        resultados = [verificar_canal(c) for c in CANAIS]
-        guardar_lives(resultados)
+        try:
+            resultados = [verificar_canal(c) for c in CANAIS]
+            guardar_lives(resultados)
+        except Exception:
+            pass
         time.sleep(INTERVALO_SEGUNDOS)
 
 
