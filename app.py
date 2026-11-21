@@ -1586,9 +1586,10 @@ def diagnosticar_youtube(url):
     # Nunca aceitar caminho/conteúdo de cookies enviado pelo visitante.
     cookie_path = None
     cookie_b64 = os.environ.get("YOUTUBE_COOKIES_B64", "").strip()
-    cmd = [
-        "yt-dlp", "--no-warnings", "--no-playlist", "--skip-download",
+    base_cmd = [
+        "yt-dlp", "--ignore-config", "--no-warnings", "--no-playlist", "--skip-download",
         "--dump-single-json", "--socket-timeout", "20", "--retries", "1",
+        "--extractor-retries", "1",
     ]
     try:
         if cookie_b64:
@@ -1609,9 +1610,33 @@ def diagnosticar_youtube(url):
                 os.chmod(cookie_path, 0o600)
             except OSError:
                 pass
-            cmd += ["--cookies", cookie_path]
-        cmd += ["--", url.strip()]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            base_cmd += ["--cookies", cookie_path]
+        # Primeiro usa os clientes padrão do yt-dlp. Se o YouTube bloquear o cliente
+        # padrão, tenta uma combinação alternativa sem pedir cookies ao visitante.
+        tentativas = [base_cmd]
+        if not cookie_path:
+            tentativas.append(base_cmd + [
+                "--extractor-args", "youtube:player_client=tv,web_safari"
+            ])
+            tentativas.append(base_cmd + [
+                "--extractor-args", "youtube:player_client=mweb"
+            ])
+        r = None
+        ultimo_erro = ""
+        for tentativa in tentativas:
+            resultado = subprocess.run(
+                tentativa + ["--", url.strip()],
+                capture_output=True, text=True, timeout=35
+            )
+            if resultado.returncode == 0 and resultado.stdout.strip():
+                r = resultado
+                break
+            ultimo_erro = (resultado.stderr or "").strip()
+        if r is None:
+            # Mantém a estrutura esperada abaixo para apresentar uma mensagem clara.
+            r = resultado
+            if ultimo_erro:
+                r.stderr = ultimo_erro
     except FileNotFoundError:
         return None, "O yt-dlp não está instalado no servidor."
     except subprocess.TimeoutExpired:
@@ -1625,9 +1650,10 @@ def diagnosticar_youtube(url):
     if r.returncode != 0 or not r.stdout.strip():
         detalhe = (r.stderr or "O yt-dlp não retornou informações do vídeo.").strip()
         if "Sign in to confirm" in detalhe or "not a bot" in detalhe.lower():
-            return None, ("O YouTube exige autenticação para este vídeo. Configure YOUTUBE_COOKIES_B64 "
-                          "nas variáveis privadas do servidor usando um cookies.txt seu, no formato Netscape. "
-                          "Não envie cookies pelo formulário nem compartilhe esse arquivo.")
+            return None, ("O YouTube bloqueou as tentativas públicas de acesso deste servidor, mesmo após "
+                          "testarmos clientes alternativos do yt-dlp. Isso pode ser uma restrição temporária "
+                          "do IP do servidor ou do próprio vídeo. Ainda não é necessário inserir cookies: "
+                          "vamos avaliar outra alternativa antes de pedir qualquer credencial.")
         return None, detalhe[-500:]
     try:
         info = json.loads(r.stdout.strip().splitlines()[-1])
