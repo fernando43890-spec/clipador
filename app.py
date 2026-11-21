@@ -478,14 +478,9 @@ HTML = r"""
           </div>
 
           <div class="campo" id="grupo-min">
-            <label for="min">Duração da captura</label>
-            <select id="min">
-              <option value="1">Gravar 1 minuto</option>
-              <option value="5">Gravar 5 minutos (teste)</option>
-              <option value="15">Gravar 15 minutos</option>
-              <option value="30">Gravar 30 minutos</option>
-              <option value="60">Gravar 60 minutos</option>
-            </select>
+            <label for="min">Duração da captura (minutos)</label>
+            <input id="min" type="number" inputmode="numeric" min="1" max="__MAXMIN__" step="1" value="5">
+            <p class="dica" id="min-dica"></p>
           </div>
 
           <div class="campo oculto" id="grupo-qtd">
@@ -649,6 +644,19 @@ function toast(msg) {
   timerToast = setTimeout(function () { t.classList.remove('on'); }, 3200);
 }
 
+const MAX_MIN = __MAXMIN__;
+function lerMinutos() {
+  const n = Math.round(Number($('min').value));
+  return Number.isFinite(n) ? Math.min(MAX_MIN, Math.max(1, n)) : 1;
+}
+function atualizarDicaMin() {
+  const n = lerMinutos();
+  $('min-dica').textContent = (n === 1 ? '1 minuto grava 1 vídeo' : n + ' minutos gravam ' + n + ' vídeos') +
+    ' de 60 segundos (máximo ' + MAX_MIN + ' min).';
+}
+$('min').addEventListener('input', atualizarDicaMin);
+$('min').addEventListener('change', function () { $('min').value = lerMinutos(); atualizarDicaMin(); });
+atualizarDicaMin();
 const ROTULOS = {ocioso: 'Aguardando', trabalhando: 'Em andamento', fim: 'Concluído', erro: 'Erro'};
 function definirStatus(msg, estado) {
   estado = ROTULOS[estado] ? estado : 'ocioso';
@@ -1045,7 +1053,7 @@ async function iniciar() {
 
   const vod = $('modo').value === 'vod';
   const base = {url: url, seg: $('seg').value, formato: $('formato').value};
-  const corpo = vod ? Object.assign(base, {qtd: $('qtd').value}) : Object.assign(base, {min: $('min').value});
+  const corpo = vod ? Object.assign(base, {qtd: $('qtd').value}) : Object.assign(base, {min: lerMinutos()});
   const res = await postar(vod ? '/iniciar_vod' : '/iniciar', corpo);
   if (!res.ok || !res.data.id) {
     definirStatus(res.data.erro || 'Link inválido.', 'erro');
@@ -1249,7 +1257,7 @@ def _montar_pagina():
         contato = ' Contato: <a href="mailto:%s">%s</a>.' % (c, c)
     teste = ('<button type="button" class="btn-mini sec" id="btn-testar">'
              'Testar se o servidor lê a Kick</button>') if TESTE_ATIVO else ""
-    html = html.replace("<!--TESTE-->", teste)
+    html = html.replace("<!--TESTE-->", teste).replace("__MAXMIN__", str(MAX_CAPTURA_MIN))
     return html.replace("<!--CONTATO-->", contato)
 
 
@@ -2331,7 +2339,7 @@ def iniciar():
         return jsonify({"id": "", "erro": "Use um link da Kick (kick.com). Se for um link encurtado e não funcionar, cole o link direto do canal."}), 400
 
     minutos = ler_numero(dados.get("min", 5), 5.0, float)
-    minutos = max(1.0, min(minutos, MAX_CAPTURA_MIN))
+    minutos = float(max(1, min(int(round(minutos)), MAX_CAPTURA_MIN)))   # minutos inteiros: 1 min = 1 clipe de 60 s
     seg = ler_seg(dados)
     formato = ler_formato(dados)
 
