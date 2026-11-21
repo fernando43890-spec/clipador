@@ -390,6 +390,7 @@ HTML = r"""
     border: 1.5px solid var(--verde); border-radius: 10px; background: rgba(88,232,121,.10);
     color: var(--verde); font-weight: 800; font-size: .9rem; cursor: pointer;
   }
+  .btn-mais-lives.oculto, .caixa.oculto { display: none; }
   .btn-mais-lives:hover { background: rgba(88,232,121,.18); }
   @media (min-width: 700px) {
     #lives-outras { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -532,7 +533,7 @@ HTML = r"""
       </div>
 
       <div class="col col-res">
-        <div class="caixa" id="status-box" style="display:none">
+        <div class="caixa oculto" id="status-box">
           <div class="status-topo"><span class="rotulo" id="status-rotulo" data-estado="ocioso">Aguardando</span></div>
           <div class="progresso" id="progresso" data-estado="ocioso" role="progressbar" aria-label="Andamento"><span></span></div>
           <div id="status" role="status" aria-live="polite" data-estado="ocioso">Cole um link de uma live da Kick para começar.</div>
@@ -572,7 +573,7 @@ HTML = r"""
       <div class="lives-layout" id="lives-layout">
         <div id="lives-destaque"></div>
         <div id="lives-outras"></div>
-        <button type="button" class="btn-mais-lives" id="btn-mais-lives" aria-expanded="false" style="display:none">Mais lives</button>
+        <button type="button" class="btn-mais-lives oculto" id="btn-mais-lives" aria-expanded="false">Mais lives</button>
       </div>
     </section>
 
@@ -1002,6 +1003,7 @@ async function testarVod() {
     const partes = new URL(url).pathname.split('/').filter(Boolean);
     if (partes[0] && RE_SLUG.test(partes[0])) { canal = partes[0]; }
   } catch (e) {}
+  $('status-box').style.display = 'block';
   definirStatus('Testando a leitura da Kick...', 'trabalhando');
   const res = await pedir('/api/vod/teste?canal=' + encodeURIComponent(canal));
   if (!res.ok) { definirStatus(res.data.erro || 'Erro ao testar.', 'erro'); return; }
