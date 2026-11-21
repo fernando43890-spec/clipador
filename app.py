@@ -367,12 +367,26 @@ HTML = r"""
   }
   .btn-live:hover { background: rgba(88, 232, 121, .12); }
   .btn-live.off { border-color: var(--borda-forte); color: var(--mutado); }
-  /* Todas as lives ficam em uma coluna; a mais assistida continua em destaque no topo. */
+  /* Live mais assistida em destaque; demais em grade compacta. */
   #lives-destaque, #lives-outras { width: 100%; min-width: 0; }
   .lives-layout:not(.sem-destaque) { grid-template-columns: minmax(0, 1fr); }
-  #lives-outras { grid-template-columns: minmax(0, 1fr); }
+  #lives-destaque .live-card { width: 100%; }
+  #lives-outras {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-flow: row; gap: 10px; min-width: 0; overflow: visible;
+    padding: 2px 2px 10px; scroll-snap-type: none;
+  }
+  #lives-outras .live-card { gap: 5px; padding: 5px; border-radius: 10px; }
+  #lives-outras .live-media { aspect-ratio: 1 / 1; }
+  #lives-outras .live-info { gap: 5px; }
+  #lives-outras .avatar { width: 25px; height: 25px; font-size: .72rem; }
+  #lives-outras .live-nome { font-size: .76rem; }
+  #lives-outras .live-titulo { font-size: .66rem; }
+  #lives-outras .btn-live { min-height: 32px; font-size: .72rem; }
+  #lives-outras .chip-viewers { font-size: .65rem; padding: 2px 6px; }
+  #lives-outras .play-over span { width: 30px; height: 30px; }
   @media (min-width: 700px) {
-    #lives-outras { grid-template-columns: minmax(0, 1fr); }
+    #lives-outras { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
   }
 
   /* ---------- clipes ---------- */
