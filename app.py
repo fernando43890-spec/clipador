@@ -74,7 +74,7 @@ TESTE_ATIVO = os.environ.get("CLIPADOR_TESTE", "0") == "1"  # rota de diagnósti
 HOSTS_KICK = {"kick.com", "kzl.ink"}
 HOSTS_ENCURTADOR = {"kzl.ink"}          # só estes são resolvidos; o destino final TEM de ser kick.com
 ESTADOS_FINAIS = ("fim", "erro")
-FORMATOS = ("original", "vertical_blur", "vertical_crop")
+FORMATOS = ("original", "vertical_blur")
 RE_SLUG = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 # ids novos têm 22 caracteres (128 bits, impossível de adivinhar); o formato antigo de 8 hex segue aceito só na limpeza
 RE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
@@ -254,7 +254,6 @@ HTML = r"""
   .fmt-prev i { position: absolute; inset: 0; background: linear-gradient(110deg, var(--ciano), var(--verde)); }
   .fmt-cel[data-fmt="vertical_blur"] .fmt-prev { width: 34px; height: 60px; background: linear-gradient(160deg, rgba(41, 220, 232, .4), rgba(88, 232, 121, .4)); }
   .fmt-cel[data-fmt="vertical_blur"] .fmt-prev i { top: 34%; bottom: 34%; }
-  .fmt-cel[data-fmt="vertical_crop"] .fmt-prev { width: 34px; height: 60px; }
 
   button { font: inherit; }
   .btn-principal {
@@ -385,6 +384,13 @@ HTML = r"""
   #lives-outras .btn-live { min-height: 32px; font-size: .72rem; }
   #lives-outras .chip-viewers { font-size: .65rem; padding: 2px 6px; }
   #lives-outras .play-over span { width: 30px; height: 30px; }
+  #lives-outras:not(.expandido) .live-card:nth-child(n+4) { display: none; }
+  .btn-mais-lives {
+    grid-column: 1 / -1; justify-self: center; min-width: 150px; padding: 10px 24px;
+    border: 1.5px solid var(--verde); border-radius: 10px; background: rgba(88,232,121,.10);
+    color: var(--verde); font-weight: 800; font-size: .9rem; cursor: pointer;
+  }
+  .btn-mais-lives:hover { background: rgba(88,232,121,.18); }
   @media (min-width: 700px) {
     #lives-outras { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
   }
@@ -450,14 +456,6 @@ HTML = r"""
   </header>
 
   <main class="wrap">
-    <section class="lives-sec" aria-labelledby="lives-titulo">
-      <h2 class="lives-titulo" id="lives-titulo">Lives agora na Kick</h2>
-      <div class="lives-layout" id="lives-layout">
-        <div id="lives-destaque"></div>
-        <div id="lives-outras"></div>
-      </div>
-    </section>
-
     <div class="layout">
       <div class="col col-form">
         <section class="hero-card">
@@ -480,7 +478,6 @@ HTML = r"""
           <div class="campo" id="grupo-min">
             <label for="min">Duração da captura</label>
             <select id="min">
-              <option value="0.5">Gravar 30 segundos</option>
               <option value="1">Gravar 1 minuto</option>
               <option value="5">Gravar 5 minutos (teste)</option>
               <option value="15">Gravar 15 minutos</option>
@@ -514,13 +511,12 @@ HTML = r"""
               <select id="formato">
                 <option value="original" selected>Horizontal</option>
                 <option value="vertical_blur">Vertical (desfocado)</option>
-                <option value="vertical_crop">Vertical (recorte)</option>
               </select>
             </div>
           </div>
           <div class="campo fmt-linha">
             <div class="fmt-cel" id="fmt-cel" data-fmt="original" aria-hidden="true"><div class="fmt-prev"><i></i></div></div>
-            <p class="dica">Horizontal é o mais rápido, mas o início do corte pode variar alguns segundos. Vertical 9:16 reencoda o vídeo e demora mais (na live ao vivo, o servidor grava primeiro e converte depois): desfocado preenche as laterais, recorte corta o centro.</p>
+            <p class="dica">Horizontal é o mais rápido, mas o início do corte pode variar alguns segundos. Vertical 9:16 reencoda o vídeo e demora mais; o modo desfocado preenche as laterais sem cortar a imagem.</p>
           </div>
 
           <button id="btn-gravar" type="button" class="btn-principal">Cortar meu vídeo</button>
@@ -571,6 +567,15 @@ HTML = r"""
         </details>
       </div>
     </div>
+
+    <section class="lives-sec" aria-labelledby="lives-titulo">
+      <h2 class="lives-titulo" id="lives-titulo">Lives agora na Kick</h2>
+      <div class="lives-layout" id="lives-layout">
+        <div id="lives-destaque"></div>
+        <div id="lives-outras"></div>
+        <button type="button" class="btn-mais-lives" id="btn-mais-lives" aria-expanded="false" style="display:none">Mais lives</button>
+      </div>
+    </section>
 
     <p class="aviso">Use apenas com autorização do streamer ou nas suas próprias lives.</p>
     <p class="rodape"><button type="button" class="link" id="abrir-termos">Termos de uso</button></p>
@@ -866,6 +871,17 @@ function colocar(cont, nos) {
   while (cont.children.length > nos.length) { cont.removeChild(cont.lastChild); }
 }
 
+let mostrarTodasLives = false;
+const btnMaisLives = $('btn-mais-lives');
+if (btnMaisLives) {
+  btnMaisLives.addEventListener('click', function () {
+    mostrarTodasLives = !mostrarTodasLives;
+    $('lives-outras').classList.toggle('expandido', mostrarTodasLives);
+    btnMaisLives.textContent = mostrarTodasLives ? 'Mostrar menos' : 'Mais lives';
+    btnMaisLives.setAttribute('aria-expanded', String(mostrarTodasLives));
+  });
+}
+
 function montarLives(lista) {
   // lista: [{canal, nome, viewers, offline, titulo, thumb, avatar}] online primeiro (maior público), offline depois
   const temPublico = lista.length > 0 && !lista[0].offline && lista[0].viewers !== null && lista[0].viewers !== undefined;
@@ -893,6 +909,12 @@ function montarLives(lista) {
   colocar($('lives-destaque'), destaque);
   colocar($('lives-outras'), outras);
   $('lives-layout').classList.toggle('sem-destaque', destaque.length === 0);
+  $('lives-outras').classList.toggle('expandido', mostrarTodasLives);
+  if (btnMaisLives) {
+    btnMaisLives.style.display = outras.length > 3 ? 'inline-flex' : 'none';
+    btnMaisLives.textContent = mostrarTodasLives ? 'Mostrar menos' : 'Mais lives';
+    btnMaisLives.setAttribute('aria-expanded', String(mostrarTodasLives));
+  }
 }
 montarLives(CANAIS.map(function (c) {
   return {canal: c.canal, nome: c.nome, viewers: null, offline: false, titulo: '', thumb: '', avatar: ''};
@@ -1627,7 +1649,7 @@ def extrair_stream(url):
 def args_formato(formato, leve=False):
     """Argumentos de vídeo do ffmpeg. 'original' só copia; os verticais reencodam em 9:16 a 30 fps.
     leve=True: 540x960, preset ultrafast e 1 thread (plano B quando o servidor não aguenta)."""
-    if formato not in ("vertical_blur", "vertical_crop"):
+    if formato != "vertical_blur":
         return ["-c", "copy"]
     w, h = (540, 960) if leve else (VERT_W, VERT_H)
     threads = 1 if leve else THREADS_FFMPEG
@@ -1644,8 +1666,7 @@ def args_formato(formato, leve=False):
             "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p"
         ) % (pw, ph, pw, ph, w, h, w)
         return ["-filter_complex", filtro, *codec]
-    filtro = "fps=30,crop=ih*9/16:ih,scale=%d:%d,setsar=1,format=yuv420p" % (w, h)
-    return ["-vf", filtro, *codec]
+    return ["-c", "copy"]
 
 
 def converter_vertical(entrada, saida, formato):
@@ -2191,7 +2212,7 @@ def iniciar():
         return jsonify({"id": "", "erro": "Use um link da Kick (kick.com). Se for um link encurtado e não funcionar, cole o link direto do canal."}), 400
 
     minutos = ler_numero(dados.get("min", 5), 5.0, float)
-    minutos = max(0.5, min(minutos, MAX_CAPTURA_MIN))
+    minutos = max(1.0, min(minutos, MAX_CAPTURA_MIN))
     seg = ler_seg(dados)
     formato = ler_formato(dados)
 
