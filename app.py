@@ -75,8 +75,10 @@ CANAIS = [
     {"nome": "Coringa", "canal": "coringa"},
 ]
 
-# vídeo vertical: 1080x1920 por padrão. Se o servidor for fraco, use CLIPADOR_VERTICAL_ALTURA=1280 (720x1280).
-VERT_H, VERT_W = (1920, 1080) if _env_int("CLIPADOR_VERTICAL_ALTURA", 1920) >= 1600 else (1280, 720)
+# vídeo vertical: 720x1280 por padrão (leve). Se o servidor tiver folga de memória, CLIPADOR_VERTICAL_ALTURA=1920 usa 1080x1920.
+VERT_H, VERT_W = (1920, 1080) if _env_int("CLIPADOR_VERTICAL_ALTURA", 1280) >= 1600 else (1280, 720)
+# O ffmpeg em container enxerga todos os núcleos do servidor e abre threads demais (isso estoura a memória). Limitamos.
+THREADS_FFMPEG = max(1, _env_int("CLIPADOR_FFMPEG_THREADS", 2))
 
 UA_NAV = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
           "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -1077,13 +1079,16 @@ def extrair_stream(url):
     return None, {}, erro_msg[-700:]
 
 
-CODEC_VERTICAL = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-                  "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]
-
-
-def args_formato(formato):
-    """Argumentos de vídeo do ffmpeg. 'original' só copia; os verticais reencodam em 9:16 a 30 fps."""
-    w, h = VERT_W, VERT_H
+def args_formato(formato, leve=False):
+    """Argumentos de vídeo do ffmpeg. 'original' só copia; os verticais reencodam em 9:16 a 30 fps.
+    leve=True: 540x960, preset ultrafast e 1 thread (plano B quando o servidor não aguenta)."""
+    if formato not in ("vertical_blur", "vertical_crop"):
+        return ["-c", "copy"]
+    w, h = (540, 960) if leve else (VERT_W, VERT_H)
+    threads = 1 if leve else THREADS_FFMPEG
+    codec = ["-c:v", "libx264", "-preset", "ultrafast" if leve else "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+             "-threads", str(threads), "-filter_threads", "1", "-filter_complex_threads", "1"]
     if formato == "vertical_blur":
         pw, ph = w // 5, h // 5  # o fundo é desfocado em miniatura e depois ampliado: muito mais leve
         filtro = (
@@ -1093,25 +1098,30 @@ def args_formato(formato):
             "[frente]scale=%d:-2[fg];"
             "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p"
         ) % (pw, ph, pw, ph, w, h, w)
-        return ["-filter_complex", filtro, *CODEC_VERTICAL]
-    if formato == "vertical_crop":
-        filtro = "fps=30,crop=ih*9/16:ih,scale=%d:%d,setsar=1,format=yuv420p" % (w, h)
-        return ["-vf", filtro, *CODEC_VERTICAL]
-    return ["-c", "copy"]
+        return ["-filter_complex", filtro, *codec]
+    filtro = "fps=30,crop=ih*9/16:ih,scale=%d:%d,setsar=1,format=yuv420p" % (w, h)
+    return ["-vf", filtro, *codec]
 
 
 def converter_vertical(entrada, saida, formato):
-    """Converte um trecho já gravado para vertical (fora do tempo real, então não depende da velocidade do servidor)."""
-    cmd = ["ffmpeg", "-nostdin", "-y", "-i", entrada, *args_formato(formato), saida]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-    except subprocess.TimeoutExpired:
+    """Converte um trecho já gravado para vertical (fora do tempo real, então não depende da velocidade do servidor).
+    Se o ffmpeg for morto por falta de memória, tenta de novo em qualidade reduzida."""
+    erro = ""
+    for leve in (False, True):
+        threads = 1 if leve else THREADS_FFMPEG
+        cmd = ["ffmpeg", "-nostdin", "-y", "-threads", str(threads), "-i", entrada,
+               *args_formato(formato, leve), saida]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        except subprocess.TimeoutExpired:
+            _remover_arquivo(saida)
+            erro = "demorou demais (mais de 15 min)"
+            continue
+        if r.returncode == 0 and clipe_valido(saida):
+            return True, ""
         _remover_arquivo(saida)
-        return False, "demorou demais (mais de 15 min)"
-    if r.returncode == 0 and clipe_valido(saida):
-        return True, ""
-    _remover_arquivo(saida)
-    return False, resumo_erro(r.stderr, r.returncode) or "o arquivo convertido saiu corrompido"
+        erro = resumo_erro(r.stderr, r.returncode) or "o arquivo convertido saiu corrompido"
+    return False, erro + "\n(tentei também em qualidade reduzida)"
 
 
 # sem "file": o ffmpeg só precisa de rede aqui (um m3u8 malicioso não consegue ler arquivos do servidor)
@@ -1424,6 +1434,7 @@ def cortar_clipe(job_id, idx, ini, formato):
     cmd = ["ffmpeg", "-nostdin", "-y", "-user_agent", user_agent, *extra,
            "-protocol_whitelist", PROTOCOLOS,
            "-rw_timeout", "20000000",
+           *(["-threads", str(THREADS_FFMPEG)] if formato != "original" else []),
            "-ss", str(int(ini)), "-i", stream, "-t", str(tam),
            *args_formato(formato),
            "-avoid_negative_ts", "make_zero", saida]
