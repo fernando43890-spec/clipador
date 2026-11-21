@@ -72,6 +72,7 @@ MAX_DISCO_MB = _env_int("CLIPADOR_MAX_DISCO_MB", 4096)      # teto de espaço us
 TESTE_ATIVO = os.environ.get("CLIPADOR_TESTE", "0") == "1"  # rota de diagnóstico /api/vod/teste
 
 HOSTS_KICK = {"kick.com", "kzl.ink"}
+HOSTS_YOUTUBE = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 HOSTS_ENCURTADOR = {"kzl.ink"}          # só estes são resolvidos; o destino final TEM de ser kick.com
 ESTADOS_FINAIS = ("fim", "erro")
 FORMATOS = ("original", "vertical_blur")
@@ -463,8 +464,8 @@ HTML = r"""
           <p class="hero-sub">Corte trechos marcantes de transmissões da <strong>Kick</strong> de forma fácil e rápida. Funciona com lives ao vivo e com lives antigas (melhores momentos).</p>
 
           <div class="campo">
-            <label for="url">Link da live</label>
-            <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https://kick.com/nome-do-canal">
+            <label for="url">Link da live ou vídeo</label>
+            <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https://www.youtube.com/live/... ou https://kick.com/canal">
           </div>
 
           <div class="campo">
@@ -519,6 +520,7 @@ HTML = r"""
           </div>
 
           <button id="btn-gravar" type="button" class="btn-principal">Cortar meu vídeo</button>
+          <button id="btn-testar-youtube" type="button" class="btn-mini sec" style="margin-top:8px;width:100%">Testar acesso ao YouTube</button>
         </section>
 
         <section class="card-live oculto" id="card-live" aria-label="Prévia da live">
@@ -535,7 +537,7 @@ HTML = r"""
         <div class="caixa" id="status-box" style="display:none">
           <div class="status-topo"><span class="rotulo" id="status-rotulo" data-estado="ocioso">Aguardando</span></div>
           <div class="progresso" id="progresso" data-estado="ocioso" role="progressbar" aria-label="Andamento"><span></span></div>
-          <div id="status" role="status" aria-live="polite" data-estado="ocioso">Cole um link da Kick para começar.</div>
+          <div id="status" role="status" aria-live="polite" data-estado="ocioso">Cole um link da Kick ou do YouTube para começar.</div>
         </div>
 
         <div class="caixa vazio" id="vazio">
@@ -992,6 +994,27 @@ function trocarModo() {
 }
 $('modo').addEventListener('change', trocarModo);
 $('formato').addEventListener('change', function () { $('fmt-cel').dataset.fmt = this.value; });
+
+
+async function testarYouTube() {
+  const url = $('url').value.trim();
+  if (!url) {
+    definirStatus('Cole primeiro o link do YouTube.', 'erro');
+    $('url').focus();
+    return;
+  }
+  definirStatus('Verificando acesso ao vídeo do YouTube...', 'trabalhando');
+  const res = await postar('/api/youtube/teste', {url: url});
+  if (!res.ok || !res.data.ok) {
+    definirStatus((res.data && res.data.erro) || 'Não consegui acessar esse vídeo.', 'erro');
+    return;
+  }
+  const v = res.data.video || {};
+  $('diag').textContent = JSON.stringify(res.data, null, 2);
+  const dur = v.duracao_s ? Math.floor(v.duracao_s / 60) + ' min' : 'duração não informada';
+  definirStatus('Vídeo acessível: ' + (v.titulo || 'YouTube') + ' (' + dur + '). O chat será testado em uma etapa separada.', 'fim');
+}
+$('btn-testar-youtube').addEventListener('click', testarYouTube);
 
 async function testarVod() {
   const url = $('url').value.trim();
@@ -1525,6 +1548,64 @@ def normalizar_url_kick(url):
             _ENCURTADOS[url] = (resultado, agora + 600)
     return resultado
 
+
+
+def youtube_url_permitida(url):
+    """Aceita somente URLs públicas do YouTube; não segue redirecionamentos arbitrários."""
+    if not isinstance(url, str) or len(url) > 500:
+        return False
+    try:
+        u = urlparse(url.strip())
+        host = _host_limpo(u)
+        porta = u.port
+    except ValueError:
+        return False
+    if u.username or u.password or porta not in (None, 80, 443):
+        return False
+    if u.scheme not in ("http", "https") or host not in HOSTS_YOUTUBE:
+        return False
+    # Restringe caminhos reconhecidos do YouTube e IDs com caracteres esperados.
+    partes = [p for p in u.path.split("/") if p]
+    if host == "youtu.be":
+        return bool(partes and re.fullmatch(r"[A-Za-z0-9_-]{6,20}", partes[0]))
+    if len(partes) >= 2 and partes[0] in ("live", "shorts", "embed"):
+        return bool(re.fullmatch(r"[A-Za-z0-9_-]{6,20}", partes[1]))
+    if partes and partes[0] == "watch":
+        return bool(re.fullmatch(r"[A-Za-z0-9_-]{6,20}", (dict(
+            item.split("=", 1) for item in u.query.split("&") if "=" in item
+        ).get("v", ""))))
+    return False
+
+
+def diagnosticar_youtube(url):
+    """Consulta metadados com yt-dlp sem baixar o vídeo; não altera os fluxos da Kick."""
+    if not youtube_url_permitida(url):
+        return None, "Cole um link válido de vídeo ou live do YouTube."
+    cmd = [
+        "yt-dlp", "--no-warnings", "--no-playlist", "--skip-download",
+        "--dump-single-json", "--socket-timeout", "20", "--retries", "1",
+        "--", url.strip()
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        return None, "O yt-dlp não está instalado no servidor."
+    except subprocess.TimeoutExpired:
+        return None, "O YouTube demorou demais para responder. Tente novamente."
+    if r.returncode != 0 or not r.stdout.strip():
+        detalhe = (r.stderr or "O yt-dlp não retornou informações do vídeo.").strip()
+        return None, detalhe[-500:]
+    try:
+        info = json.loads(r.stdout.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        return None, "O YouTube respondeu, mas não consegui interpretar os dados do vídeo."
+    return {
+        "id": str(info.get("id") or "")[:32],
+        "titulo": str(info.get("title") or "Vídeo do YouTube")[:160],
+        "duracao_s": int(info.get("duration") or 0),
+        "status_live": str(info.get("live_status") or "not_live")[:40],
+        "disponivel": bool(info.get("formats") or info.get("url")),
+    }, ""
 
 def slug_da_url(url):
     if not url_permitida(url):
@@ -2373,6 +2454,19 @@ def mais_clipes(job_id):
 _TESTE_ULTIMO = {}
 _TESTE_LOCK = threading.Lock()
 
+
+
+@app.route("/api/youtube/teste", methods=["POST"])
+@limitar("youtube_teste", 5, 60)
+def api_youtube_teste():
+    dados = request.get_json(silent=True)
+    dados = dados if isinstance(dados, dict) else {}
+    url = str(dados.get("url", "")).strip()
+    info, erro = diagnosticar_youtube(url)
+    if not info:
+        return jsonify({"ok": False, "erro": erro}), 400
+    return jsonify({"ok": True, "video": info,
+                    "aviso": "Teste de metadados concluído. O replay do chat ainda precisa ser verificado separadamente."})
 
 @app.route("/api/vod/teste")
 def api_vod_teste():
