@@ -194,6 +194,15 @@ PAGINA = """
   .btn-principal:hover { background: var(--grad); filter: brightness(1.1); }
   .btn-topo { background: var(--grad); }
   .logo-box { border-color: rgba(37, 244, 238, 0.4); }
+  .ponto.off { background: #6b6585; }
+  .btn-mini.off { background: #2a2540; color: var(--texto); }
+  .rodape { text-align: center; margin: 14px 0 0; }
+  .rodape a { color: var(--mutado); font-size: 0.78rem; text-decoration: underline; cursor: pointer; }
+  .modal-fundo { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal { background: var(--surface); border: 1px solid var(--borda-forte); border-radius: 16px; max-width: 480px; width: 100%; max-height: 80vh; overflow-y: auto; padding: 18px; }
+  .modal h2 { margin: 0 0 10px; font-size: 1.1rem; }
+  .modal p { color: var(--mutado); font-size: 0.86rem; line-height: 1.5; margin: 8px 0; }
+  .modal .btn-mini { margin-top: 10px; width: 100%; }
   .aviso { color: #7c7496; font-size: 0.78rem; text-align: center; margin: 18px 0 0; line-height: 1.45; }
 </style>
 </head>
@@ -209,14 +218,13 @@ PAGINA = """
         </span>
         <span>Clipador de lives</span>
       </a>
-      <a class="btn-topo" href="#url">Colar link</a>
     </div>
   </header>
 
   <main class="wrap">
     <section class="hero-card">
-      <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
-      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
+      <h1 class="hero-titulo">Transforme lives em clipes de 1 minuto</h1>
+      <p class="hero-sub">Cole o link da Kick e corte uma live <strong>ao vivo</strong> ou uma <strong>live antiga</strong> (com os melhores momentos). Baixe os cortes prontos em MP4 ou ZIP.</p>
 
       <div class="campo">
         <label for="url">Link da live</label>
@@ -269,7 +277,7 @@ PAGINA = """
     <section class="card-live" id="card-live" style="display:none">
       <div class="card-topo">
         <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
-        <span>AO VIVO</span>
+        <span id="plat-status">AO VIVO</span>
       </div>
       <iframe id="player" class="player" allowfullscreen allow="autoplay; fullscreen"></iframe>
       <p class="player-aviso" id="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
@@ -288,7 +296,23 @@ PAGINA = """
     </section>
 
     <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
+    <p class="rodape"><a onclick="abrirTermos()">Termos de uso</a></p>
   </main>
+
+  <div class="modal-fundo" id="termos" onclick="if(event.target===this){fecharTermos()}">
+    <div class="modal">
+      <h2>Termos de uso</h2>
+      <p>1. Use o Clipador de lives apenas com autorização do streamer ou em transmissões suas.</p>
+      <p>2. O conteúdo das lives e dos clipes continua sendo do criador original. Este site não reivindica direitos sobre ele.</p>
+      <p>3. Este site não tem ligação com a Kick nem com nenhum streamer. Kick é marca de seus respectivos donos.</p>
+      <p>4. Os clipes são gerados de forma automática e podem conter erros ou ficar fora do ponto esperado.</p>
+      <p>5. Você é o único responsável pelo uso e pela publicação dos clipes, inclusive em outras plataformas.</p>
+      <p>6. Os arquivos ficam no servidor só por um tempo e podem ser apagados a qualquer momento. Baixe o que quiser guardar.</p>
+      <p>7. O serviço é oferecido como está, sem garantia de funcionamento ou disponibilidade.</p>
+      <p>8. Se o dono de um conteúdo pedir a remoção, o pedido será atendido.</p>
+      <button class="btn-mini" onclick="fecharTermos()">Fechar</button>
+    </div>
+  </div>
 
 <script>
 let job = null;
@@ -305,6 +329,25 @@ function plataforma(url) {
     }
   } catch (e) {}
   return null;
+}
+
+const estadoCanal = {};  // canal -> 'online' | 'offline' | 'incerto'
+
+function abrirTermos() { document.getElementById('termos').style.display = 'flex'; }
+function fecharTermos() { document.getElementById('termos').style.display = 'none'; }
+
+function atualizarStatusPreview() {
+  const p = plataforma(document.getElementById('url').value.trim());
+  const txt = document.getElementById('plat-status');
+  const ponto = document.querySelector('#card-live .ponto');
+  if (!txt || !ponto) { return; }
+  let canal = '';
+  if (p) {
+    try { canal = new URL(document.getElementById('url').value.trim()).pathname.split('/').filter(Boolean)[0] || ''; } catch (e) {}
+  }
+  const off = estadoCanal[canal] === 'offline';
+  txt.innerText = off ? 'OFFLINE' : 'AO VIVO';
+  if (off) { ponto.classList.add('off'); } else { ponto.classList.remove('off'); }
 }
 
 let ultimoEmbed = '';
@@ -327,6 +370,7 @@ function mostrarPreview() {
     document.getElementById('player').src = p.embed;
     ultimoEmbed = p.embed;
   }
+  atualizarStatusPreview();
 }
 document.getElementById('url').addEventListener('input', mostrarPreview);
 
@@ -367,15 +411,21 @@ function tocar(canal) {
 }
 
 function montarLives(lista) {
-  // lista: [{canal, nome, viewers}] já ordenada por público (maior primeiro)
-  const assinatura = lista.map(function (c) { return c.canal + ':' + c.viewers; }).join('|');
+  // lista: [{canal, nome, viewers, offline}] online primeiro (maior público), offline depois
+  const assinatura = lista.map(function (c) { return c.canal + ':' + c.viewers + ':' + (c.offline ? 'off' : 'on'); }).join('|');
   if (assinatura === assinaturaLives) { return; }
   assinaturaLives = assinatura;
 
-  const temPublico = lista.length > 0 && lista[0].viewers !== null;
+  const temPublico = lista.length > 0 && lista[0].viewers !== null && !lista[0].offline;
   let h = '';
   lista.forEach(function (c, pos) {
     const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
+    if (c.offline) {
+      h += '<div class="live-item"><div class="live-topo"><span><span class="ponto off"></span>' + c.nome +
+        '<span class="viewers">Offline</span></span>' +
+        '<button class="btn-mini off" onclick="clipar(' + idx + ')">Usar última live</button></div></div>';
+      return;
+    }
     const autoplay = temPublico && pos === 0;
     const rodando = autoplay || tocando.has(c.canal);
     const info = c.viewers !== null ? '<span class="viewers">' + c.viewers.toLocaleString('pt-BR') + ' assistindo</span>' : '';
@@ -410,17 +460,20 @@ async function filtrarOnline() {
       })
     );
 
-    const online = resultados.filter(function (x) { return x.status === 'online'; });
-    const offline = resultados.filter(function (x) { return x.status === 'offline'; }).length;
+    resultados.forEach(function (x) { estadoCanal[x.c.canal] = x.status; });
+    atualizarStatusPreview();
 
-    if (online.length > 0) {
+    const online = resultados.filter(function (x) { return x.status === 'online'; });
+    const offlineLista = resultados.filter(function (x) { return x.status === 'offline'; });
+
+    if (online.length > 0 || offlineLista.length > 0) {
       online.sort(function (a, b) { return (b.viewers || 0) - (a.viewers || 0); });
-      montarLives(online.map(function (x) {
-        return {canal: x.c.canal, nome: x.c.nome, viewers: x.viewers};
+      const lista = online.map(function (x) {
+        return {canal: x.c.canal, nome: x.c.nome, viewers: x.viewers, offline: false};
+      }).concat(offlineLista.map(function (x) {
+        return {canal: x.c.canal, nome: x.c.nome, viewers: null, offline: true};
       }));
-    } else if (offline === CANAIS.length) {
-      assinaturaLives = '';
-      montarLives([]);
+      montarLives(lista);
     }
   } catch (e) {}
 }
@@ -870,8 +923,8 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
                 novas += 1
         paginas += 1
         proximo = bloco.get("cursor")
-        if progresso:
-            progresso(paginas, len(tempos))
+        if progresso and (paginas == 1 or paginas % 10 == 0):  # MUDANÇA: atualiza a cada 10 páginas
+            progresso(paginas, len(tempos), menor)
         if not proximo or not msgs:
             break
         if menor is not None and menor < inicio_epoch:
@@ -880,7 +933,7 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
         if sem_novas >= 30:
             break
         cursor = str(proximo)
-        time.sleep(0.3)  # MUDANÇA: mais devagar para não tomar bloqueio
+        time.sleep(0.1)  # MUDANÇA: pausa menor (o 429 já tem nova tentativa)
     return tempos, ""
 
 
@@ -952,10 +1005,29 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade):
                       diag=json.dumps(escolhida)[:400])
         return
 
-    def prog(pags, msgs):
+    t_chat = time.time()
+
+    def prog(pags, msgs, menor=None):
+        # MUDANÇA: estimativa do tempo que falta (o chat é lido do fim da live para o começo)
+        resto = ""
+        try:
+            fim_epoch = inicio_epoch + dur
+            if menor is not None and dur > 0:
+                feito = max(0.0, fim_epoch - max(menor, inicio_epoch))
+                frac = min(1.0, feito / float(dur))
+                gasto = time.time() - t_chat
+                if frac > 0.01 and gasto > 5:
+                    falta = int(gasto * (1 - frac) / frac)
+                    if falta >= 60:
+                        resto = "Faltam uns %d min" % ((falta + 59) // 60)
+                    else:
+                        resto = "Faltam menos de 1 min"
+        except Exception:
+            resto = ""
         atualizar_job(job_id, estado="analisando",
                       msg="Lendo o chat da live... %d mensagens" % msgs,
-                      diag="Página %d do chat | live: %s" % (pags, escolhida["titulo"][:60]))
+                      diag=(resto + "\n" if resto else "") +
+                           "Página %d do chat | live: %s" % (pags, escolhida["titulo"][:60]))
 
     tempos, erro = baixar_chat_vod(slug, inicio_epoch, dur, prog)
     if not tempos:
