@@ -1732,6 +1732,8 @@ def diagnosticar_youtube(url):
         "id": str(info.get("id") or "")[:32],
         "titulo": str(info.get("title") or "Vídeo do YouTube")[:160],
         "duracao_s": int(info.get("duration") or 0),
+        "status_live": str(info.get("live_status") or "not_live")[:40],
+        "disponivel": bool(info.get("formats") or info.get("url")),
     }, ""
 
 
