@@ -133,15 +133,6 @@ PAGINA = """
     border-radius: 16px; padding: 14px 16px; margin-top: 14px; font-size: 0.92rem;
   }
   #status { font-weight: 600; color: var(--texto); }
-  #lista a {
-    display: block; color: var(--texto); text-decoration: none;
-    padding: 10px 12px; border-radius: 10px; background: var(--surface-2);
-    border: 1px solid var(--borda); margin-top: 8px; font-size: 0.9rem; font-weight: 500;
-  }
-  #lista a:first-child {
-    margin-top: 0; background: rgba(0, 255, 56, 0.22);
-    border-color: var(--kick-brilho); color: var(--kick-brilho); font-weight: 700;
-  }
   .diag-topo {
     font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--mutado); font-weight: 700;
@@ -173,6 +164,7 @@ PAGINA = """
     transition: filter 0.2s ease;
   }
   .btn-mini:hover { filter: brightness(1.1); }
+  .btn-mini:disabled { opacity: 0.55; cursor: not-allowed; }
   .placeholder {
     width: 100%; aspect-ratio: 16/9; border-radius: 12px; background: #000;
     border: 1px solid var(--borda); display: flex; flex-direction: column;
@@ -204,6 +196,24 @@ PAGINA = """
   .modal p { color: var(--mutado); font-size: 0.86rem; line-height: 1.5; margin: 8px 0; }
   .modal .btn-mini { margin-top: 10px; width: 100%; }
   .aviso { color: #7c7496; font-size: 0.78rem; text-align: center; margin: 18px 0 0; line-height: 1.45; }
+
+  /* NOVO: lista de clipes, player e gerar mais */
+  .clipe-item { margin-top: 10px; background: var(--surface-2); border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; }
+  .clipe-topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .clipe-nome { font-weight: 700; font-size: 0.9rem; }
+  .clipe-tempo { font-size: 0.78rem; color: var(--mutado); margin-top: 2px; }
+  .clipe-acoes { display: flex; gap: 6px; }
+  .clipe-acoes a, .clipe-acoes button {
+    background: var(--kick-verde); color: #0d0a16; border: 0; border-radius: 10px;
+    padding: 7px 11px; font-weight: 700; font-size: .78rem; cursor: pointer; text-decoration: none;
+  }
+  .clipe-acoes button.sec { background: #2a2540; color: var(--texto); }
+  .clipe-video { width: 100%; max-height: 70vh; border-radius: 10px; background: #000; margin-top: 10px; }
+  .zip-link { display: block; text-align: center; padding: 12px; border-radius: 10px; font-weight: 700; text-decoration: none;
+    background: rgba(0,255,56,0.22); border: 1px solid var(--kick-brilho); color: var(--kick-brilho); }
+  .mais-box { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+  .mais-box select { flex: 1; }
+  .mais-box button { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -259,6 +269,17 @@ PAGINA = """
         </select>
       </div>
 
+      <!-- NOVO: formato do vídeo -->
+      <div class="campo">
+        <label for="formato">Formato do vídeo</label>
+        <select id="formato">
+          <option value="original" selected>Original (horizontal, mais rápido)</option>
+          <option value="vertical_blur">Vertical 9:16 com fundo desfocado</option>
+          <option value="vertical_crop">Vertical 9:16 com recorte central</option>
+        </select>
+        <p class="player-aviso">Vertical reencoda o vídeo, então demora mais pra ficar pronto.</p>
+      </div>
+
       <div class="campo" id="grupo-qtd" style="display:none">
         <label for="qtd">Quantos clipes dos melhores momentos</label>
         <select id="qtd">
@@ -285,6 +306,22 @@ PAGINA = """
 
     <div class="caixa" id="status">Aguardando link.</div>
     <div class="caixa" id="lista" style="display:none"></div>
+
+    <!-- NOVO: gerar mais clipes -->
+    <div class="caixa" id="mais" style="display:none">
+      <span class="diag-topo">Quer mais momentos dessa live?</span>
+      <div class="mais-box">
+        <select id="mais-qtd">
+          <option value="3">Mais 3 clipes</option>
+          <option value="5" selected>Mais 5 clipes</option>
+          <option value="10">Mais 10 clipes</option>
+          <option value="15">Mais 15 clipes</option>
+        </select>
+        <button type="button" class="btn-mini" id="btn-mais" onclick="maisClipes()">Gerar mais</button>
+      </div>
+      <p class="player-aviso" id="mais-aviso"></p>
+    </div>
+
     <div class="caixa">
       <span class="diag-topo">Diagnóstico</span>
       <pre id="diag">-</pre>
@@ -318,6 +355,7 @@ PAGINA = """
 let job = null;
 let ultimoClipesRenderizado = -1;
 let ultimoJobRenderizado = null;
+let ultimaAssinaturaLista = '';
 
 function plataforma(url) {
   try {
@@ -509,16 +547,20 @@ async function testarVod() {
   }
 }
 
+// MUDANÇA: envia o formato e zera a lista e o bloco de mais clipes
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
   const min = document.getElementById('min').value;
   const seg = document.getElementById('seg').value;
+  const formato = document.getElementById('formato').value;
   const btn = document.getElementById('btn-gravar');
   if (!url) { return; }
   btn.disabled = true;
   ultimoClipesRenderizado = -1;
+  ultimaAssinaturaLista = '';
   document.getElementById('lista').style.display = 'none';
   document.getElementById('lista').innerHTML = '';
+  document.getElementById('mais').style.display = 'none';
   document.getElementById('status').innerText = 'Iniciando...';
   try {
     const vod = document.getElementById('modo').value === 'vod';
@@ -526,8 +568,8 @@ async function iniciar() {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(vod
-        ? {url: url, seg: seg, qtd: document.getElementById('qtd').value}
-        : {url: url, min: min, seg: seg})
+        ? {url: url, seg: seg, qtd: document.getElementById('qtd').value, formato: formato}
+        : {url: url, min: min, seg: seg, formato: formato})
     });
     const d = await r.json();
     if (!r.ok || !d.id) {
@@ -544,25 +586,66 @@ async function iniciar() {
   }
 }
 
-function atualizarListaClipes(clipesQtd, jobId) {
+// NOVO: H:MM:SS no navegador
+function fmtTempo(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(sec).padStart(2, '0');
+  return h > 0 ? h + ':' + mm + ':' + ss : m + ':' + ss;
+}
+
+// MUDANÇA: lista com intervalo, Assistir e Baixar
+function atualizarListaClipes(clipesQtd, jobId, info) {
   const lista = document.getElementById('lista');
   if (clipesQtd <= 0) {
     lista.style.display = 'none';
     return;
   }
-  if (clipesQtd === ultimoClipesRenderizado && jobId === ultimoJobRenderizado) {
+  const assinatura = jobId + ':' + clipesQtd;
+  if (assinatura === ultimaAssinaturaLista) {
     return;
   }
+  ultimaAssinaturaLista = assinatura;
   ultimoClipesRenderizado = clipesQtd;
   ultimoJobRenderizado = jobId;
   lista.style.display = 'block';
-  let h = '<a href="/zip/' + jobId + '">Baixar todos em ZIP (' + clipesQtd + ' clipes)</a>';
+
+  const porNumero = {};
+  (info || []).forEach(function (x) { porNumero[x.n] = x; });
+
+  let h = '<a class="zip-link" href="/zip/' + jobId + '">Baixar todos em ZIP (' + clipesQtd + ' clipes)</a>';
   for (let i = 1; i <= clipesQtd; i++) {
-    h += '<a href="/clipe/' + jobId + '/' + i + '">Clipe ' + i + '</a>';
+    const x = porNumero[i];
+    const tempo = x
+      ? '<div class="clipe-tempo">' + fmtTempo(x.ini) + ' até ' + fmtTempo(x.fim) +
+        ' da live &middot; ' + x.msgs + ' msgs no chat</div>'
+      : '';
+    h += '<div class="clipe-item" id="clipe-' + i + '">' +
+      '<div class="clipe-topo"><div><div class="clipe-nome">Clipe ' + i + '</div>' + tempo + '</div>' +
+      '<div class="clipe-acoes">' +
+      '<button type="button" class="sec" onclick="assistir(' + i + ')">Assistir</button>' +
+      '<a href="/clipe/' + jobId + '/' + i + '">Baixar</a>' +
+      '</div></div>' +
+      '<div id="video-' + i + '"></div></div>';
   }
   lista.innerHTML = h;
 }
 
+// NOVO: pré-visualização do clipe na própria página
+function assistir(n) {
+  const alvo = document.getElementById('video-' + n);
+  if (!alvo || !job) { return; }
+  if (alvo.innerHTML) {
+    alvo.innerHTML = '';
+    return;
+  }
+  alvo.innerHTML = '<video class="clipe-video" controls autoplay playsinline src="/ver/' + job + '/' + n + '"></video>';
+}
+
+// MUDANÇA: mostra o bloco de gerar mais quando termina
 async function checar() {
   if (!job) { return; }
   try {
@@ -570,15 +653,53 @@ async function checar() {
     const d = await r.json();
     document.getElementById('status').innerText = d.msg || '';
     document.getElementById('diag').innerText = d.diag || '-';
-    atualizarListaClipes(Number(d.clipes || 0), job);
+    atualizarListaClipes(Number(d.clipes || 0), job, d.info || []);
 
-    if (d.estado !== 'fim' && d.estado !== 'erro') {
+    const terminou = d.estado === 'fim' || d.estado === 'erro';
+    const maisBox = document.getElementById('mais');
+    const temMais = (d.restantes || 0) > 0;
+    if (d.estado === 'fim' && temMais) {
+      maisBox.style.display = 'block';
+      document.getElementById('mais-aviso').innerText =
+        'Ainda restam ' + d.restantes + ' momentos de destaque nessa live.';
+    } else {
+      maisBox.style.display = 'none';
+    }
+
+    if (!terminou) {
       setTimeout(checar, 3000);
     } else {
       document.getElementById('btn-gravar').disabled = false;
+      document.getElementById('btn-mais').disabled = false;
     }
   } catch (e) {
     setTimeout(checar, 3000);
+  }
+}
+
+// NOVO: pede mais clipes do mesmo job
+async function maisClipes() {
+  if (!job) { return; }
+  const btn = document.getElementById('btn-mais');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/mais_clipes/' + job, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({qtd: document.getElementById('mais-qtd').value})
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      document.getElementById('mais-aviso').innerText = d.erro || 'Não deu pra gerar mais.';
+      btn.disabled = false;
+      return;
+    }
+    document.getElementById('mais').style.display = 'none';
+    document.getElementById('btn-gravar').disabled = true;
+    checar();
+  } catch (e) {
+    document.getElementById('mais-aviso').innerText = 'Erro ao pedir mais clipes.';
+    btn.disabled = false;
   }
 }
 </script>
@@ -615,6 +736,21 @@ def tamanho_pasta(pasta):
     return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta))
 
 
+# NOVO: formata segundos como H:MM:SS (ou M:SS)
+def fmt_tempo(s):
+    s = int(max(0, s))
+    h, resto = divmod(s, 3600)
+    m, sec = divmod(resto, 60)
+    if h:
+        return "%d:%02d:%02d" % (h, m, sec)
+    return "%d:%02d" % (m, sec)
+
+
+# NOVO: texto do intervalo de um clipe
+def intervalo_clipe(ini, tamanho):
+    return "%s até %s" % (fmt_tempo(ini), fmt_tempo(ini + tamanho))
+
+
 def atualizar_job(job_id, **campos):
     with JOBS_LOCK:
         if job_id in JOBS:
@@ -649,7 +785,35 @@ def normalizar_url(url):
     return url
 
 
-def gravar(job_id, url, minutos, seg=SEG):
+# NOVO: formatos de saída
+FORMATOS = ("original", "vertical_blur", "vertical_crop")
+
+
+# NOVO: argumentos do ffmpeg para cada formato
+def args_formato(formato):
+    if formato == "vertical_blur":
+        filtro = (
+            "split=2[fundo][frente];"
+            "[fundo]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,boxblur=25:5[bg];"
+            "[frente]scale=1080:-2[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1"
+        )
+        return ["-filter_complex", filtro,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "128k"]
+    if formato == "vertical_crop":
+        filtro = "crop=ih*9/16:ih,scale=1080:1920,setsar=1"
+        return ["-vf", filtro,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "128k"]
+    return ["-c", "copy"]
+
+
+# MUDANÇA: recebe o formato
+def gravar(job_id, url, minutos, seg=SEG, formato="original"):
     pasta = os.path.join(BASE, job_id)
     os.makedirs(pasta, exist_ok=True)
     atualizar_job(job_id, pasta=pasta)
@@ -710,6 +874,11 @@ def gravar(job_id, url, minutos, seg=SEG):
         diag="yt-dlp OK. Iniciando ffmpeg...",
     )
 
+    # NOVO: vídeo conforme o formato escolhido
+    extra_video = args_formato(formato)
+    if formato != "original":
+        extra_video += ["-force_key_frames", f"expr:gte(t,n_forced*{seg})"]
+
     cmd = [
         "ffmpeg", "-y",
         "-user_agent", user_agent,
@@ -720,8 +889,8 @@ def gravar(job_id, url, minutos, seg=SEG):
         "-reconnect_delay_max", "5",
         "-rw_timeout", "15000000",
         "-i", stream,
-        "-t", str(int(minutos * 60)),  # MUDANÇA: aceita número quebrado (0.5 = 30s)
-        "-c", "copy",
+        "-t", str(int(minutos * 60)),
+        *extra_video,  # MUDANÇA: no lugar de "-c", "copy"
         "-f", "segment",
         "-segment_time", str(seg),
         "-reset_timestamps", "1",
@@ -789,7 +958,6 @@ def gravar(job_id, url, minutos, seg=SEG):
         )
 
 
-
 # ======================= LIVES ANTIGAS (VOD) =======================
 import re
 from datetime import datetime, timezone
@@ -834,7 +1002,7 @@ def slug_da_url(url):
 
 
 def listar_vods(slug):
-    """Retorna (lista, erro). Cada item: uuid, titulo, inicio(iso), duracao_s, views, canal_id."""
+    """Retorna (lista, erro). Cada item: uuid, titulo, inicio(iso), duracao_s, views, source."""
     dados, erro = kick_get_json("https://kick.com/api/v2/channels/%s/videos" % quote(slug))
     if dados is None:
         return [], erro
@@ -853,12 +1021,11 @@ def listar_vods(slug):
             "duracao_s": int((v.get("duration") or 0) / 1000),
             "views": v.get("views") or 0,
             "source": v.get("source") or "",
-            "ao_vivo": bool(v.get("is_live")),  # MUDANÇA: marca a live em andamento
+            "ao_vivo": bool(v.get("is_live")),
         })
     return out, ""
 
 
-# MUDANÇA: função nova. Pula a live em andamento (duração 0)
 def escolher_vod(vods):
     """Primeira live já encerrada (a em andamento vem com duração 0)."""
     for v in vods:
@@ -896,7 +1063,7 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
     while paginas < 4000:
         dados, erro = kick_get_json(
             "https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (cid, cursor))
-        # MUDANÇA: se a Kick pedir calma (429), espera e tenta de novo
+        # se a Kick pedir calma (429), espera e tenta de novo
         tentativas = 0
         while dados is None and "429" in (erro or "") and tentativas < 5:
             tentativas += 1
@@ -923,7 +1090,7 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
                 novas += 1
         paginas += 1
         proximo = bloco.get("cursor")
-        if progresso and (paginas == 1 or paginas % 10 == 0):  # MUDANÇA: atualiza a cada 10 páginas
+        if progresso and (paginas == 1 or paginas % 10 == 0):
             progresso(paginas, len(tempos), menor)
         if not proximo or not msgs:
             break
@@ -933,10 +1100,11 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
         if sem_novas >= 30:
             break
         cursor = str(proximo)
-        time.sleep(0.1)  # MUDANÇA: pausa menor (o 429 já tem nova tentativa)
+        time.sleep(0.1)
     return tempos, ""
 
 
+# MUDANÇA: devolve o ranking do pico mais forte ao mais fraco (sem ordenar por horário)
 def achar_picos(tempos, duracao_s, quantidade, tamanho_clipe):
     """Janela deslizante de 30s; pega os maiores picos sem sobrepor. Retorna lista de (inicio_s, msgs)."""
     if not tempos or duracao_s <= 0:
@@ -966,7 +1134,6 @@ def achar_picos(tempos, duracao_s, quantidade, tamanho_clipe):
             ini = max(0, duracao_s - tamanho_clipe)
         if all(abs(ini - e[0]) >= max(tamanho_clipe, 90) for e in escolhidos):
             escolhidos.append((ini, score))
-    escolhidos.sort()
     return escolhidos
 
 
@@ -975,7 +1142,67 @@ def stream_da_vod(slug, uuid_):
     return extrair_stream(url)
 
 
-def gravar_vod(job_id, url, tamanho_clipe, quantidade):
+# NOVO: corta um clipe da VOD usando os dados guardados no job
+def cortar_clipe(job_id, idx, ini, formato):
+    with JOBS_LOCK:
+        j = JOBS[job_id]
+        pasta, stream = j["pasta"], j["stream"]
+        headers, tam = j["headers"], j["tamanho_clipe"]
+
+    user_agent = headers.get("User-Agent", UA_NAV)
+    hdr = "".join("%s: %s\r\n" % (k, v) for k, v in headers.items()
+                  if k.lower() != "user-agent" and v)
+    extra = ["-headers", hdr] if hdr else []
+
+    saida = os.path.join(pasta, "clipe_%03d.mp4" % idx)
+    cmd = ["ffmpeg", "-y", "-user_agent", user_agent, *extra,
+           "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+           "-rw_timeout", "20000000",
+           "-ss", str(int(ini)), "-i", stream, "-t", str(tam),
+           *args_formato(formato),
+           "-avoid_negative_ts", "make_zero", saida]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=240 if formato == "original" else 600)
+    except subprocess.TimeoutExpired:
+        return False, "demorou demais"
+    if r.returncode == 0 and os.path.isfile(saida) and os.path.getsize(saida) > 0:
+        return True, ""
+    return False, (r.stderr or "")[-120:].strip()
+
+
+# NOVO: corta uma lista de (inicio_s, msgs) e guarda os intervalos exatos
+def _cortar_lote(job_id, lote, formato, primeiro_idx):
+    with JOBS_LOCK:
+        tam = JOBS[job_id]["tamanho_clipe"]
+        info = list(JOBS[job_id]["info"])
+        feitos = JOBS[job_id]["clipes"]
+    notas = []
+    for k, (ini, score) in enumerate(lote):
+        idx = primeiro_idx + k
+        ok, nota = cortar_clipe(job_id, idx, ini, formato)
+        if ok:
+            feitos += 1
+            info.append({"n": idx + 1, "ini": int(ini), "fim": int(ini + tam), "msgs": score})
+            notas.append("Clipe %d: %s (%d msgs)" % (idx + 1, intervalo_clipe(ini, tam), score))
+        else:
+            notas.append("Clipe %d falhou: %s" % (idx + 1, nota))
+        atualizar_job(job_id, clipes=feitos, info=info,
+                      msg="Cortando... %d de %d" % (k + 1, len(lote)),
+                      diag="\n".join(notas)[-900:])
+
+    if feitos:
+        atualizar_job(job_id, estado="fim", clipes=feitos, info=info, ocupado=False,
+                      msg="Pronto! %d clipes dos melhores momentos." % feitos,
+                      diag="\n".join(notas)[-900:])
+    else:
+        atualizar_job(job_id, estado="erro", clipes=0, ocupado=False,
+                      msg="Não consegui cortar nenhum clipe.",
+                      diag="\n".join(notas)[-900:])
+
+
+# MUDANÇA: usa o ranking completo e guarda tudo no job
+def gravar_vod(job_id, url, tamanho_clipe, quantidade, formato="original"):
     pasta = os.path.join(BASE, job_id)
     os.makedirs(pasta, exist_ok=True)
     atualizar_job(job_id, pasta=pasta, estado="abrindo", msg="Procurando a live antiga...", diag="")
@@ -996,7 +1223,7 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade):
     if m:
         escolhida = next((v for v in vods if v["uuid"] == m.group(1)), None)
     if not escolhida:
-        escolhida = escolher_vod(vods) or vods[0]  # MUDANÇA: pula a live em andamento
+        escolhida = escolher_vod(vods) or vods[0]
 
     inicio_epoch = _iso_para_epoch(escolhida["inicio"])
     dur = escolhida["duracao_s"]
@@ -1008,7 +1235,6 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade):
     t_chat = time.time()
 
     def prog(pags, msgs, menor=None):
-        # MUDANÇA: estimativa do tempo que falta (o chat é lido do fim da live para o começo)
         resto = ""
         try:
             fim_epoch = inicio_epoch + dur
@@ -1035,16 +1261,16 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade):
                       diag=erro or "Nenhuma mensagem encontrada no período.")
         return
 
-    picos = achar_picos(tempos, dur, quantidade, tamanho_clipe)
-    if not picos:
+    # NOVO: guarda até 60 picos, do mais forte ao mais fraco
+    ranking = achar_picos(tempos, dur, 60, tamanho_clipe)
+    if not ranking:
         atualizar_job(job_id, estado="erro", msg="Não achei momentos de destaque no chat.", diag="")
         return
 
-    atualizar_job(job_id, estado="gravando",
-                  msg="Achei %d momentos. Cortando..." % len(picos),
-                  diag="Chat: %d mensagens analisadas" % len(tempos))
+    # os N primeiros do ranking, em ordem de horário
+    primeiros = sorted(ranking[:quantidade])
 
-    # MUDANÇA: usa o link do vídeo que a lista já trouxe (evita o 429 do yt-dlp)
+    # usa o link do vídeo que a lista já trouxe (evita o 429 do yt-dlp)
     src = escolhida.get("source") or ""
     if src.startswith("http"):
         stream, headers, erro_yt = src, {}, ""
@@ -1055,40 +1281,15 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade):
                       diag=erro_yt or "sem mensagem")
         return
 
-    user_agent = headers.get("User-Agent", UA_NAV)
-    hdr = "".join("%s: %s\r\n" % (k, v) for k, v in headers.items()
-                  if k.lower() != "user-agent" and v)
-    extra = ["-headers", hdr] if hdr else []
+    atualizar_job(job_id, estado="gravando",
+                  msg="Achei %d momentos. Cortando..." % len(primeiros),
+                  diag="Chat: %d mensagens analisadas" % len(tempos),
+                  picos=ranking, usados=len(primeiros), stream=stream, headers=headers)
 
-    feitos = 0
-    notas = []
-    for idx, (ini, score) in enumerate(picos):
-        saida = os.path.join(pasta, "clipe_%03d.mp4" % idx)
-        cmd = ["ffmpeg", "-y", "-user_agent", user_agent, *extra,
-               "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
-               "-rw_timeout", "20000000",
-               "-ss", str(int(ini)), "-i", stream, "-t", str(tamanho_clipe),
-               "-c", "copy", "-avoid_negative_ts", "make_zero", saida]
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
-        except subprocess.TimeoutExpired:
-            notas.append("clipe %d: demorou demais" % (idx + 1))
-            continue
-        if r.returncode == 0 and os.path.isfile(saida) and os.path.getsize(saida) > 0:
-            feitos += 1
-            notas.append("clipe %d: min %d:%02d (%d msgs)" % (idx + 1, ini // 60, ini % 60, score))
-        else:
-            notas.append("clipe %d falhou: %s" % (idx + 1, (r.stderr or "")[-120:].strip()))
-        atualizar_job(job_id, clipes=feitos, msg="Cortando... %d de %d" % (idx + 1, len(picos)),
-                      diag="\n".join(notas)[-700:])
+    with JOBS_LOCK:
+        formato_job = JOBS[job_id]["formato"]
 
-    if feitos:
-        atualizar_job(job_id, estado="fim", clipes=feitos,
-                      msg="Pronto! %d clipes dos melhores momentos." % feitos,
-                      diag="\n".join(notas)[-700:])
-    else:
-        atualizar_job(job_id, estado="erro", clipes=0, msg="Não consegui cortar nenhum clipe.",
-                      diag="\n".join(notas)[-700:])
+    _cortar_lote(job_id, primeiros, formato_job, primeiro_idx=0)
 
 
 @app.route("/")
@@ -1105,7 +1306,6 @@ def iniciar():
 
     url = normalizar_url(url)
 
-    # MUDANÇA: aceita número quebrado (0.5 = 30 segundos)
     try:
         minutos = float(dados.get("min", 5))
     except (TypeError, ValueError):
@@ -1119,11 +1319,16 @@ def iniciar():
     if seg not in (30, 60):
         seg = 60
 
-    # MUDANÇA: o clipe segue a captura. 30s -> clipe de 30s; o resto -> clipes de 1 minuto
+    # o clipe segue a captura. 30s -> clipe de 30s; o resto -> clipes de 1 minuto
     if minutos <= 0.5:
         seg = 30
     else:
         seg = 60
+
+    # NOVO: formato
+    formato = str(dados.get("formato", "original"))
+    if formato not in FORMATOS:
+        formato = "original"
 
     job_id = uuid.uuid4().hex[:8]
     with JOBS_LOCK:
@@ -1135,7 +1340,7 @@ def iniciar():
             "pasta": "",
         }
 
-    threading.Thread(target=gravar, args=(job_id, url, minutos, seg), daemon=True).start()
+    threading.Thread(target=gravar, args=(job_id, url, minutos, seg, formato), daemon=True).start()
     return jsonify({"id": job_id})
 
 
@@ -1157,11 +1362,59 @@ def iniciar_vod():
         qtd = 5
     qtd = max(1, min(qtd, 15))
 
+    # NOVO: formato
+    formato = str(dados.get("formato", "original"))
+    if formato not in FORMATOS:
+        formato = "original"
+
     job_id = uuid.uuid4().hex[:8]
     with JOBS_LOCK:
-        JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": "", "pasta": ""}
-    threading.Thread(target=gravar_vod, args=(job_id, url, seg, qtd), daemon=True).start()
+        JOBS[job_id] = {
+            "estado": "iniciando", "msg": "Iniciando...", "clipes": 0,
+            "diag": "", "pasta": "",
+            # NOVO: dados que o gerar-mais precisa
+            "info": [],
+            "picos": [],
+            "usados": 0,
+            "stream": "",
+            "headers": {},
+            "tamanho_clipe": seg,
+            "formato": formato,
+            "ocupado": False,
+        }
+    threading.Thread(target=gravar_vod, args=(job_id, url, seg, qtd, formato), daemon=True).start()
     return jsonify({"id": job_id})
+
+
+# NOVO: gera mais clipes do mesmo job, sem reler o chat
+@app.route("/mais_clipes/<job_id>", methods=["POST"])
+def mais_clipes(job_id):
+    dados = request.get_json(silent=True) or {}
+    try:
+        qtd = max(1, min(int(dados.get("qtd", 5)), 15))
+    except (TypeError, ValueError):
+        qtd = 5
+
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        if not j or not j.get("picos"):
+            return jsonify({"erro": "Esse job não tem lista de picos. Rode os melhores momentos antes."}), 404
+        if j.get("ocupado") or j["estado"] in ("abrindo", "analisando", "gravando"):
+            return jsonify({"erro": "Ainda tem clipes sendo cortados. Espere terminar."}), 409
+        usados = j.get("usados", 0)
+        restantes = j["picos"][usados:usados + qtd]
+        if not restantes:
+            return jsonify({"erro": "Acabaram os momentos de destaque dessa live."}), 404
+        j["usados"] = usados + len(restantes)
+        j["ocupado"] = True
+        j["estado"] = "gravando"
+        j["msg"] = "Cortando mais %d clipes..." % len(restantes)
+        formato = j["formato"]
+        primeiro_idx = len(listar_clipes(j["pasta"]))
+
+    lote = sorted(restantes)
+    threading.Thread(target=_cortar_lote, args=(job_id, lote, formato, primeiro_idx), daemon=True).start()
+    return jsonify({"id": job_id, "novos": len(restantes)})
 
 
 @app.route("/api/vod/teste")
@@ -1176,7 +1429,7 @@ def api_vod_teste():
     vods, erro = listar_vods(slug)
     info["lista_vods"] = {"ok": bool(vods), "quantidade": len(vods), "erro": erro}
     if vods:
-        v = escolher_vod(vods) or vods[0]  # MUDANÇA: pula a live em andamento
+        v = escolher_vod(vods) or vods[0]
         info["primeira_vod"] = {"titulo": v["titulo"][:60], "inicio": v["inicio"], "duracao_s": v["duracao_s"]}
         canal, e2 = kick_get_json("https://kick.com/api/v2/channels/%s" % quote(slug))
         info["canal_id"] = {"ok": bool(canal and "id" in canal), "erro": e2}
@@ -1189,6 +1442,7 @@ def api_vod_teste():
     return jsonify(info)
 
 
+# MUDANÇA: devolve também os intervalos e quantos picos ainda restam
 @app.route("/status/<job_id>")
 def status(job_id):
     with JOBS_LOCK:
@@ -1200,6 +1454,8 @@ def status(job_id):
             "msg": j["msg"],
             "clipes": j["clipes"],
             "diag": j.get("diag", ""),
+            "info": j.get("info", []),
+            "restantes": max(0, len(j.get("picos", [])) - j.get("usados", 0)),
         })
 
 
@@ -1217,6 +1473,20 @@ def clipe(job_id, n):
     if not os.path.isfile(arq):
         return "Não encontrado", 404
     return send_file(arq, as_attachment=True, download_name=f"clipe_{n}.mp4")
+
+
+# NOVO: serve o clipe sem forçar download, para a pré-visualização
+@app.route("/ver/<job_id>/<int:n>")
+def ver_clipe(job_id, n):
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        pasta = j.get("pasta") if j else ""
+    if not pasta or n < 1:
+        return "Não encontrado", 404
+    arq = os.path.join(pasta, f"clipe_{n - 1:03d}.mp4")
+    if not os.path.isfile(arq):
+        return "Não encontrado", 404
+    return send_file(arq, mimetype="video/mp4", conditional=True)
 
 
 @app.route("/zip/<job_id>")
