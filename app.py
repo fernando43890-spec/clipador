@@ -503,7 +503,6 @@ HTML = r"""
               <label for="seg">Duração de cada clipe</label>
               <select id="seg">
                 <option value="60" selected>60 segundos</option>
-                <option value="30">30 segundos</option>
               </select>
             </div>
             <div class="campo">
@@ -533,7 +532,7 @@ HTML = r"""
       </div>
 
       <div class="col col-res">
-        <div class="caixa">
+        <div class="caixa" id="status-box" style="display:none">
           <div class="status-topo"><span class="rotulo" id="status-rotulo" data-estado="ocioso">Aguardando</span></div>
           <div class="progresso" id="progresso" data-estado="ocioso" role="progressbar" aria-label="Andamento"><span></span></div>
           <div id="status" role="status" aria-live="polite" data-estado="ocioso">Cole um link da Kick para começar.</div>
@@ -578,7 +577,11 @@ HTML = r"""
     </section>
 
     <p class="aviso">Use apenas com autorização do streamer ou nas suas próprias lives.</p>
-    <p class="rodape"><button type="button" class="link" id="abrir-termos">Termos de uso</button></p>
+    <p class="rodape">
+      <button type="button" class="link" id="abrir-termos">Termos de uso</button>
+      <span aria-hidden="true"> · </span>
+      <button type="button" class="link" id="abrir-feedback">Enviar feedback</button>
+    </p>
   </main>
 
   <div class="modal-fundo" id="termos" role="dialog" aria-modal="true" aria-labelledby="termos-titulo">
@@ -596,6 +599,23 @@ HTML = r"""
     </div>
   </div>
 
+  <div class="modal-fundo" id="feedback" role="dialog" aria-modal="true" aria-labelledby="feedback-titulo">
+    <form class="modal" id="feedback-form">
+      <h2 id="feedback-titulo">Enviar feedback</h2>
+      <p>Conte uma sugestão, reclamação ou problema que encontrou no Clipador.</p>
+      <label for="feedback-tipo">Tipo</label>
+      <select id="feedback-tipo" required>
+        <option value="sugestao">Sugestão</option>
+        <option value="problema">Problema</option>
+        <option value="elogio">Elogio</option>
+      </select>
+      <label for="feedback-mensagem">Mensagem</label>
+      <textarea id="feedback-mensagem" maxlength="2000" required rows="5" placeholder="Escreva sua mensagem (até 2.000 caracteres)"></textarea>
+      <button class="btn-mini" type="submit" id="feedback-enviar">Enviar</button>
+      <button class="btn-mini sec" type="button" id="fechar-feedback">Fechar</button>
+      <p id="feedback-status" role="status" aria-live="polite"></p>
+    </form>
+  </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script nonce="__NONCE__">
@@ -686,6 +706,27 @@ document.addEventListener('keydown', function (e) {
 $('abrir-termos').addEventListener('click', abrirTermos);
 $('fechar-termos').addEventListener('click', fecharTermos);
 $('termos').addEventListener('click', function (e) { if (e.target === this) { fecharTermos(); } });
+
+// ---------- feedback ----------
+function fecharFeedback() { $('feedback').style.display = 'none'; }
+$('abrir-feedback').addEventListener('click', function () {
+  $('feedback').style.display = 'flex';
+  $('feedback-mensagem').focus();
+});
+$('fechar-feedback').addEventListener('click', fecharFeedback);
+$('feedback').addEventListener('click', function (e) { if (e.target === this) { fecharFeedback(); } });
+$('feedback-form').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  const btn = $('feedback-enviar');
+  const mensagem = $('feedback-mensagem').value.trim();
+  if (mensagem.length < 5) { $('feedback-status').textContent = 'Escreva uma mensagem um pouco mais detalhada.'; return; }
+  btn.disabled = true;
+  $('feedback-status').textContent = 'Enviando...';
+  const r = await postar('/feedback', {tipo: $('feedback-tipo').value, mensagem: mensagem});
+  $('feedback-status').textContent = r.ok ? 'Obrigado! Seu feedback foi recebido.' : (r.data.erro || 'Não consegui enviar. Tente novamente.');
+  btn.disabled = false;
+  if (r.ok) { $('feedback-mensagem').value = ''; }
+});
 
 // ---------- prévia do link colado ----------
 function plataforma(url) {
@@ -989,6 +1030,7 @@ async function iniciar() {
     return;
   }
   btn.disabled = true;
+  $('status-box').style.display = 'block';
   clearTimeout(timerChecar);
   resetarResultados();
   definirStatus('Iniciando...', 'trabalhando');
@@ -1331,7 +1373,7 @@ def ler_numero(valor, padrao, tipo=int):
 
 def ler_seg(dados):
     seg = ler_numero(dados.get("seg", SEG), SEG)
-    return seg if seg in (30, 60) else SEG
+    return seg if seg == 60 else SEG
 
 
 def ler_formato(dados):
@@ -1828,20 +1870,12 @@ def gravar(job_id, url, minutos, seg=SEG, formato="original"):
 
 # ============================== LIVES ANTIGAS (VOD) ==============================
 
-_KICK_HTTP_LOCAL = threading.local()
-
-
 def kick_get_json(url, timeout=20):
-    """GET em JSON na Kick. Reutiliza conexão por thread para reduzir latência."""
+    """GET em JSON na Kick. Retorna (dados, erro)."""
     try:
         if curl_requests is not None:
-            # Uma sessão por thread evita compartilhar estado de conexão entre jobs.
-            sessao = getattr(_KICK_HTTP_LOCAL, "sessao", None)
-            if sessao is None:
-                sessao = curl_requests.Session(impersonate="chrome")
-                _KICK_HTTP_LOCAL.sessao = sessao
-            r = sessao.get(url, timeout=timeout,
-                           headers={"Accept": "application/json"})
+            r = curl_requests.get(url, impersonate="chrome", timeout=timeout,
+                                  headers={"Accept": "application/json"})
             if r.status_code != 200:
                 return None, "HTTP %s" % r.status_code
             return r.json(), ""
@@ -1905,85 +1939,91 @@ def iso_para_epoch(txt):
     return dt.timestamp()
 
 
-def janelas_amostragem_vod(duracao_s):
-    """Seleciona três trechos: começo, meio e fim, sem varrer a VOD inteira."""
-    dur = max(0, int(duracao_s))
-    if dur <= 0:
-        return []
-    tamanho = min(10 * 60, max(3 * 60, int(dur * 0.08)))
-    tamanho = min(tamanho, max(1, dur // 3))
-    if tamanho <= 0:
-        return [(0, dur)]
-    meio = max(0, (dur - tamanho) // 2)
-    candidatos = [(0, tamanho), (meio, meio + tamanho), (dur - tamanho, dur)]
-    # Em VODs curtas as janelas podem se tocar; une sobreposições para não repetir consultas.
-    unidos = []
-    for a, b in sorted(candidatos):
-        if unidos and a <= unidos[-1][1]:
-            unidos[-1] = (unidos[-1][0], max(unidos[-1][1], b))
-        else:
-            unidos.append((a, b))
-    return unidos
-
-
 def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
-    """Baixa o chat apenas de três amostras da VOD (começo, meio e fim)."""
+    """Percorre o chat de trás pra frente a partir do fim da VOD. Retorna (segundos relativos, erro)."""
     canal, erro = kick_get_json("https://kick.com/api/v2/channels/%s" % quote(canal_slug))
     if not canal or "id" not in canal:
         return [], "não consegui o id do canal (%s)" % erro
     cid = canal["id"]
 
-    janelas = janelas_amostragem_vod(duracao_s)
-    if not janelas:
-        return [], "duração inválida"
+    fim_epoch = inicio_epoch + duracao_s
+    cursor = str(int(fim_epoch * 1_000_000))
     tempos, vistos = [], set()
-    paginas_total = 0
-    for etapa, (rel_ini, rel_fim) in enumerate(janelas, 1):
-        cursor = str(int((inicio_epoch + rel_fim) * 1_000_000))
-        sem_novas = 0
-        while paginas_total < 4000:
-            url = "https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (cid, cursor)
+    paginas, sem_novas = 0, 0
+    while paginas < 4000:
+        url = "https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (cid, cursor)
+        dados, erro = kick_get_json(url)
+        # se a Kick pedir calma (429), espera e tenta de novo
+        tentativas = 0
+        while dados is None and "429" in (erro or "") and tentativas < 5:
+            tentativas += 1
+            time.sleep(5 * tentativas)
             dados, erro = kick_get_json(url)
-            tentativas = 0
-            while dados is None and "429" in (erro or "") and tentativas < 5:
-                tentativas += 1
-                time.sleep(5 * tentativas)
-                dados, erro = kick_get_json(url)
-            if dados is None:
-                if not tempos:
-                    return [], "falha ao ler amostra %d: %s" % (etapa, erro)
-                break
-
-            bloco = dados.get("data") or {}
-            msgs = bloco.get("messages") or []
-            novas = 0
-            menor = None
-            for m in msgs:
-                mid = m.get("id")
-                if mid in vistos:
-                    continue
-                t = iso_para_epoch(m.get("created_at"))
-                if t is None:
-                    continue
-                vistos.add(mid)
-                menor = t if menor is None else min(menor, t)
-                if inicio_epoch + rel_ini <= t <= inicio_epoch + rel_fim:
-                    tempos.append(t - inicio_epoch)
-                    novas += 1
-
-            paginas_total += 1
-            if progresso:
-                progresso(paginas_total, len(tempos), menor, etapa, len(janelas))
-            proximo = bloco.get("cursor")
-            if not proximo or not msgs or (menor is not None and menor < inicio_epoch + rel_ini):
-                break
-            sem_novas = sem_novas + 1 if novas == 0 else 0
-            if sem_novas >= 30:
-                break
-            cursor = str(proximo)
-            time.sleep(0.05)
-
+        if dados is None:
+            return tempos, ("falha na página %d: %s" % (paginas, erro)) if not tempos else ""
+        bloco = dados.get("data") or {}
+        msgs = bloco.get("messages") or []
+        novas = 0
+        menor = None
+        for m in msgs:
+            mid = m.get("id")
+            if mid in vistos:
+                continue
+            vistos.add(mid)
+            t = iso_para_epoch(m.get("created_at"))
+            if t is None:
+                continue
+            menor = t if menor is None else min(menor, t)
+            if inicio_epoch <= t <= fim_epoch:
+                tempos.append(t - inicio_epoch)
+                novas += 1
+        paginas += 1
+        proximo = bloco.get("cursor")
+        if progresso and (paginas == 1 or paginas % 10 == 0):
+            progresso(paginas, len(tempos), menor)
+        if not proximo or not msgs:
+            break
+        if menor is not None and menor < inicio_epoch:
+            break
+        sem_novas = sem_novas + 1 if novas == 0 else 0
+        if sem_novas >= 30:
+            break
+        cursor = str(proximo)
+        time.sleep(0.1)
     return tempos, ""
+
+
+def baixar_chat_vod_amostrado(canal_slug, inicio_epoch, duracao_s, progresso=None):
+    """Analisa até 1h do início, 2h centrais e 3h finais da VOD, sem percorrer o restante."""
+    duracao_s = max(0, int(duracao_s))
+    if duracao_s <= 0:
+        return [], "duração inválida"
+    inicio = (0, min(3600, duracao_s))
+    meio_ini = max(0, (duracao_s - 7200) // 2)
+    meio = (meio_ini, min(duracao_s, meio_ini + 7200))
+    fim = (max(0, duracao_s - 10800), duracao_s)
+    intervalos = []
+    for a, b in sorted((inicio, meio, fim)):
+        if b <= a:
+            continue
+        if intervalos and a <= intervalos[-1][1]:
+            intervalos[-1] = (intervalos[-1][0], max(intervalos[-1][1], b))
+        else:
+            intervalos.append((a, b))
+    todos = set()
+    erros = []
+    paginas_total = 0
+    for idx, (a, b) in enumerate(intervalos, 1):
+        def prog(pags, msgs, menor=None):
+            nonlocal paginas_total
+            paginas_total += pags
+            if progresso:
+                progresso(paginas_total, len(todos) + msgs, menor)
+        tempos, erro = baixar_chat_vod(canal_slug, inicio_epoch + a, b - a, prog)
+        todos.update(round(a + t, 3) for t in tempos)
+        if erro:
+            erros.append(erro)
+    return sorted(todos), ("; ".join(erros) if erros and not todos else "")
 
 
 def achar_picos(tempos, duracao_s, quantidade, tamanho_clipe):
@@ -2017,31 +2057,6 @@ def achar_picos(tempos, duracao_s, quantidade, tamanho_clipe):
         if all(abs(ini - e[0]) >= max(tamanho_clipe, 90) for e in escolhidos):
             escolhidos.append((ini, score))
     return escolhidos
-
-
-def achar_picos_amostrados(tempos, duracao_s, quantidade, tamanho_clipe):
-    """Gera ranking equilibrado: primeiro um pico de cada região, depois os próximos."""
-    janelas = janelas_amostragem_vod(duracao_s)
-    if not janelas:
-        return []
-    por_regiao = max(1, int(math.ceil(60 / float(len(janelas)))))
-    regioes = []
-    for rel_ini, rel_fim in janelas:
-        locais = [t - rel_ini for t in tempos if rel_ini <= t <= rel_fim]
-        picos = achar_picos(locais, rel_fim - rel_ini, por_regiao, tamanho_clipe)
-        regioes.append([(rel_ini + ini, score) for ini, score in picos])
-
-    # Intercala as regiões para que os primeiros resultados representem começo, meio e fim.
-    ranking = []
-    for indice in range(max((len(r) for r in regioes), default=0)):
-        for regiao in regioes:
-            if indice < len(regiao):
-                candidato = regiao[indice]
-                if all(abs(candidato[0] - outro[0]) >= max(tamanho_clipe, 90) for outro in ranking):
-                    ranking.append(candidato)
-        if len(ranking) >= 60:
-            break
-    return ranking
 
 
 def stream_da_vod(slug, uuid_):
@@ -2140,20 +2155,35 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade, formato="original"):
 
     t_chat = time.time()
 
-    def prog(pags, msgs, menor=None, etapa=1, total_etapas=3):
+    def prog(pags, msgs, menor=None):
+        resto = ""
+        try:
+            fim_epoch = inicio_epoch + dur
+            if menor is not None and dur > 0:
+                feito = max(0.0, fim_epoch - max(menor, inicio_epoch))
+                frac = min(1.0, feito / float(dur))
+                gasto = time.time() - t_chat
+                if frac > 0.01 and gasto > 5:
+                    falta = int(gasto * (1 - frac) / frac)
+                    if falta >= 60:
+                        resto = "Faltam uns %d min" % ((falta + 59) // 60)
+                    else:
+                        resto = "Faltam menos de 1 min"
+        except Exception:
+            resto = ""
         atualizar_job(job_id, estado="analisando",
-                      msg="Analisando trecho %d de %d... %d mensagens" % (etapa, total_etapas, msgs),
-                      diag="Página %d do chat | amostras do começo, meio e fim | live: %s" %
-                           (pags, escolhida["titulo"][:60]))
+                      msg="Lendo o chat da live... %d mensagens" % msgs,
+                      diag=(resto + "\n" if resto else "") +
+                           "Páginas consultadas: %d | amostras: início 1h, meio 2h, final 3h | live: %s" % (pags, escolhida["titulo"][:60]))
 
-    tempos, erro = baixar_chat_vod(slug, inicio_epoch, dur, prog)
+    tempos, erro = baixar_chat_vod_amostrado(slug, inicio_epoch, dur, prog)
     if not tempos:
         atualizar_job(job_id, estado="erro", msg="Não consegui ler o chat dessa live.",
                       diag=erro or "Nenhuma mensagem encontrada no período.")
         return
 
     # guarda até 60 picos, do mais forte ao mais fraco
-    ranking = achar_picos_amostrados(tempos, dur, 60, tamanho_clipe)
+    ranking = achar_picos(tempos, dur, 60, tamanho_clipe)
     if not ranking:
         atualizar_job(job_id, estado="erro", msg="Não achei momentos de destaque no chat.", diag="")
         return
@@ -2174,7 +2204,7 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade, formato="original"):
 
     atualizar_job(job_id, estado="gravando",
                   msg="Achei %d momentos. Cortando..." % len(primeiros),
-                  diag="Chat: %d mensagens analisadas em amostras do começo, meio e fim" % len(tempos),
+                  diag="Chat: %d mensagens analisadas" % len(tempos),
                   picos=ranking, usados=len(primeiros), stream=stream, headers=headers)
 
     cortar_lote(job_id, primeiros, formato)
@@ -2245,6 +2275,25 @@ def api_lives():
             _LIVES_CACHE["dados"] = dados
             _LIVES_CACHE["ate"] = time.time() + (30 if ok else 10)
         return jsonify({"canais": _LIVES_CACHE["dados"]})
+
+
+@app.route("/feedback", methods=["POST"])
+@limitar("feedback", 3, 300)
+def receber_feedback():
+    dados = request.get_json(silent=True)
+    dados = dados if isinstance(dados, dict) else {}
+    tipo = str(dados.get("tipo", "sugestao"))[:20]
+    mensagem = str(dados.get("mensagem", "")).strip()
+    if tipo not in ("sugestao", "problema", "elogio") or not 5 <= len(mensagem) <= 2000:
+        return jsonify({"erro": "Confira o tipo e escreva uma mensagem entre 5 e 2.000 caracteres."}), 400
+    caminho = os.path.join(BASE, "feedback.jsonl")
+    try:
+        with open(caminho, "a", encoding="utf-8") as arq:
+            arq.write(json.dumps({"data": datetime.now(timezone.utc).isoformat(), "tipo": tipo,
+                                  "mensagem": mensagem}, ensure_ascii=False) + "\n")
+    except OSError:
+        return jsonify({"erro": "Não foi possível salvar agora. Tente novamente mais tarde."}), 500
+    return jsonify({"ok": True})
 
 
 @app.route("/iniciar", methods=["POST"])
