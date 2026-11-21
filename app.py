@@ -1299,6 +1299,106 @@ FUNDO_JPG = base64.b64decode(
 )
 FUNDO_ETAG = hashlib.md5(FUNDO_JPG).hexdigest()[:16]
 
+# ---- Pix (botão "Ajude a manter o site no ar") ----
+PIX_CHAVE = "d0643ebf-af79-43ca-9da1-6036593d011b"      # chave aleatória
+PIX_NOME = "CLIPES DAS LIVES"         # nome que aparece no Pix (até 25 caracteres, sem acento)
+PIX_CIDADE = "BRASIL"                  # cidade (até 15 caracteres, sem acento)
+# QR Code desse Pix, gerado já pronto (SVG). Se você mudar a chave, o nome ou a cidade, o QR abaixo deixa de valer:
+# o site detecta isso sozinho e mostra só o "copia e cola" (que é sempre recalculado) até você trocar o QR.
+PIX_QR_PARA = "00020126580014br.gov.bcb.pix0136d0643ebf-af79-43ca-9da1-6036593d011b5204000053039865802BR5916CLIPES DAS LIVES6006BRASIL62070503***63045A42"
+PIX_QR_SVG = (
+    '<svg viewBox="0 0 57 57" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="QR Code Pix" shape-renderin'
+    'g="crispEdges"><rect width="57" height="57" fill="#fff"/><path fill="#000" d="M6 6h7v1h-7zM14 6h2v1h-2zM17 6h3'
+    'v1h-3zM21 6h1v1h-1zM24 6h2v1h-2zM27 6h1v1h-1zM33 6h2v1h-2zM36 6h1v1h-1zM39 6h1v1h-1zM42 6h1v1h-1zM44 6h7v1h-7z'
+    'M6 7h1v1h-1zM12 7h1v1h-1zM16 7h1v1h-1zM18 7h4v1h-4zM23 7h1v1h-1zM25 7h4v1h-4zM33 7h1v1h-1zM36 7h1v1h-1zM38 7h2'
+    'v1h-2zM41 7h1v1h-1zM44 7h1v1h-1zM50 7h1v1h-1zM6 8h1v1h-1zM8 8h3v1h-3zM12 8h1v1h-1zM14 8h1v1h-1zM16 8h1v1h-1zM1'
+    '8 8h1v1h-1zM22 8h1v1h-1zM28 8h5v1h-5zM34 8h2v1h-2zM41 8h1v1h-1zM44 8h1v1h-1zM46 8h3v1h-3zM50 8h1v1h-1zM6 9h1v1'
+    'h-1zM8 9h3v1h-3zM12 9h1v1h-1zM14 9h5v1h-5zM22 9h1v1h-1zM24 9h5v1h-5zM30 9h2v1h-2zM37 9h1v1h-1zM41 9h2v1h-2zM44'
+    ' 9h1v1h-1zM46 9h3v1h-3zM50 9h1v1h-1zM6 10h1v1h-1zM8 10h3v1h-3zM12 10h1v1h-1zM14 10h1v1h-1zM17 10h3v1h-3zM24 10'
+    'h1v1h-1zM26 10h9v1h-9zM37 10h2v1h-2zM40 10h3v1h-3zM44 10h1v1h-1zM46 10h3v1h-3zM50 10h1v1h-1zM6 11h1v1h-1zM12 1'
+    '1h1v1h-1zM17 11h1v1h-1zM20 11h1v1h-1zM25 11h2v1h-2zM30 11h2v1h-2zM34 11h1v1h-1zM37 11h3v1h-3zM44 11h1v1h-1zM50'
+    ' 11h1v1h-1zM6 12h7v1h-7zM14 12h1v1h-1zM16 12h1v1h-1zM18 12h1v1h-1zM20 12h1v1h-1zM22 12h1v1h-1zM24 12h1v1h-1zM2'
+    '6 12h1v1h-1zM28 12h1v1h-1zM30 12h1v1h-1zM32 12h1v1h-1zM34 12h1v1h-1zM36 12h1v1h-1zM38 12h1v1h-1zM40 12h1v1h-1z'
+    'M42 12h1v1h-1zM44 12h7v1h-7zM26 13h1v1h-1zM30 13h2v1h-2zM34 13h2v1h-2zM37 13h1v1h-1zM39 13h4v1h-4zM6 14h4v1h-4'
+    'zM12 14h1v1h-1zM14 14h3v1h-3zM18 14h1v1h-1zM20 14h1v1h-1zM22 14h1v1h-1zM26 14h5v1h-5zM33 14h3v1h-3zM37 14h1v1h'
+    '-1zM39 14h1v1h-1zM42 14h2v1h-2zM46 14h3v1h-3zM50 14h1v1h-1zM6 15h2v1h-2zM10 15h2v1h-2zM13 15h3v1h-3zM17 15h2v1'
+    'h-2zM22 15h2v1h-2zM25 15h1v1h-1zM27 15h1v1h-1zM29 15h1v1h-1zM31 15h1v1h-1zM33 15h2v1h-2zM36 15h1v1h-1zM41 15h2'
+    'v1h-2zM45 15h1v1h-1zM49 15h2v1h-2zM9 16h1v1h-1zM12 16h5v1h-5zM18 16h1v1h-1zM20 16h1v1h-1zM22 16h2v1h-2zM25 16h'
+    '1v1h-1zM27 16h1v1h-1zM29 16h1v1h-1zM36 16h1v1h-1zM39 16h2v1h-2zM42 16h2v1h-2zM50 16h1v1h-1zM8 17h1v1h-1zM10 17'
+    'h2v1h-2zM13 17h2v1h-2zM16 17h1v1h-1zM18 17h4v1h-4zM23 17h3v1h-3zM28 17h1v1h-1zM32 17h4v1h-4zM37 17h1v1h-1zM40 '
+    '17h2v1h-2zM43 17h1v1h-1zM45 17h2v1h-2zM49 17h1v1h-1zM6 18h2v1h-2zM12 18h3v1h-3zM16 18h2v1h-2zM21 18h2v1h-2zM24'
+    ' 18h1v1h-1zM27 18h2v1h-2zM30 18h1v1h-1zM35 18h3v1h-3zM39 18h1v1h-1zM42 18h1v1h-1zM44 18h1v1h-1zM47 18h1v1h-1zM'
+    '6 19h4v1h-4zM11 19h1v1h-1zM13 19h7v1h-7zM21 19h1v1h-1zM24 19h3v1h-3zM28 19h3v1h-3zM32 19h2v1h-2zM38 19h2v1h-2z'
+    'M44 19h1v1h-1zM46 19h2v1h-2zM49 19h1v1h-1zM7 20h1v1h-1zM11 20h2v1h-2zM14 20h6v1h-6zM21 20h3v1h-3zM26 20h1v1h-1'
+    'zM29 20h1v1h-1zM32 20h1v1h-1zM34 20h2v1h-2zM38 20h1v1h-1zM40 20h1v1h-1zM44 20h1v1h-1zM46 20h1v1h-1zM48 20h2v1h'
+    '-2zM8 21h1v1h-1zM10 21h1v1h-1zM15 21h1v1h-1zM18 21h2v1h-2zM21 21h1v1h-1zM24 21h1v1h-1zM27 21h1v1h-1zM29 21h1v1'
+    'h-1zM33 21h2v1h-2zM36 21h3v1h-3zM41 21h1v1h-1zM46 21h1v1h-1zM48 21h3v1h-3zM6 22h1v1h-1zM8 22h3v1h-3zM12 22h4v1'
+    'h-4zM17 22h2v1h-2zM20 22h2v1h-2zM23 22h1v1h-1zM25 22h2v1h-2zM28 22h2v1h-2zM31 22h3v1h-3zM36 22h3v1h-3zM40 22h3'
+    'v1h-3zM44 22h1v1h-1zM48 22h1v1h-1zM50 22h1v1h-1zM8 23h2v1h-2zM14 23h1v1h-1zM16 23h1v1h-1zM22 23h3v1h-3zM26 23h'
+    '2v1h-2zM29 23h2v1h-2zM33 23h2v1h-2zM40 23h2v1h-2zM43 23h1v1h-1zM46 23h1v1h-1zM48 23h1v1h-1zM50 23h1v1h-1zM6 24'
+    'h7v1h-7zM15 24h1v1h-1zM17 24h1v1h-1zM23 24h4v1h-4zM30 24h1v1h-1zM32 24h1v1h-1zM35 24h1v1h-1zM38 24h3v1h-3zM43 '
+    '24h4v1h-4zM48 24h1v1h-1zM6 25h5v1h-5zM13 25h6v1h-6zM20 25h1v1h-1zM23 25h2v1h-2zM26 25h1v1h-1zM31 25h2v1h-2zM35'
+    ' 25h1v1h-1zM38 25h2v1h-2zM42 25h3v1h-3zM47 25h1v1h-1zM50 25h1v1h-1zM6 26h3v1h-3zM10 26h7v1h-7zM19 26h1v1h-1zM2'
+    '1 26h1v1h-1zM25 26h12v1h-12zM39 26h2v1h-2zM42 26h8v1h-8zM6 27h1v1h-1zM8 27h1v1h-1zM10 27h1v1h-1zM14 27h2v1h-2z'
+    'M18 27h4v1h-4zM23 27h1v1h-1zM26 27h1v1h-1zM30 27h1v1h-1zM33 27h2v1h-2zM36 27h1v1h-1zM42 27h1v1h-1zM46 27h1v1h-'
+    '1zM48 27h3v1h-3zM6 28h1v1h-1zM8 28h1v1h-1zM10 28h1v1h-1zM12 28h1v1h-1zM14 28h4v1h-4zM19 28h1v1h-1zM21 28h1v1h-'
+    '1zM23 28h1v1h-1zM26 28h1v1h-1zM28 28h1v1h-1zM30 28h2v1h-2zM36 28h1v1h-1zM38 28h2v1h-2zM42 28h1v1h-1zM44 28h1v1'
+    'h-1zM46 28h2v1h-2zM50 28h1v1h-1zM7 29h1v1h-1zM10 29h1v1h-1zM14 29h4v1h-4zM19 29h2v1h-2zM22 29h1v1h-1zM24 29h3v'
+    '1h-3zM30 29h1v1h-1zM35 29h1v1h-1zM37 29h3v1h-3zM42 29h1v1h-1zM46 29h1v1h-1zM49 29h1v1h-1zM6 30h1v1h-1zM9 30h6v'
+    '1h-6zM17 30h5v1h-5zM24 30h1v1h-1zM26 30h5v1h-5zM32 30h1v1h-1zM37 30h1v1h-1zM39 30h9v1h-9zM6 31h2v1h-2zM10 31h1'
+    'v1h-1zM16 31h2v1h-2zM20 31h4v1h-4zM25 31h4v1h-4zM32 31h3v1h-3zM38 31h2v1h-2zM43 31h3v1h-3zM49 31h1v1h-1zM6 32h'
+    '1v1h-1zM9 32h1v1h-1zM12 32h1v1h-1zM14 32h1v1h-1zM17 32h1v1h-1zM23 32h1v1h-1zM25 32h2v1h-2zM29 32h2v1h-2zM32 32'
+    'h1v1h-1zM34 32h1v1h-1zM36 32h2v1h-2zM43 32h1v1h-1zM48 32h2v1h-2zM11 33h1v1h-1zM13 33h1v1h-1zM15 33h1v1h-1zM18 '
+    '33h1v1h-1zM22 33h3v1h-3zM27 33h2v1h-2zM30 33h1v1h-1zM35 33h2v1h-2zM38 33h2v1h-2zM41 33h5v1h-5zM48 33h1v1h-1zM6'
+    ' 34h1v1h-1zM11 34h2v1h-2zM14 34h1v1h-1zM16 34h1v1h-1zM18 34h1v1h-1zM20 34h4v1h-4zM29 34h1v1h-1zM33 34h1v1h-1zM'
+    '35 34h2v1h-2zM38 34h4v1h-4zM44 34h3v1h-3zM48 34h1v1h-1zM50 34h1v1h-1zM6 35h2v1h-2zM9 35h1v1h-1zM13 35h2v1h-2zM'
+    '16 35h1v1h-1zM20 35h1v1h-1zM22 35h3v1h-3zM29 35h1v1h-1zM31 35h1v1h-1zM38 35h1v1h-1zM40 35h2v1h-2zM46 35h1v1h-1'
+    'zM50 35h1v1h-1zM6 36h1v1h-1zM8 36h1v1h-1zM12 36h1v1h-1zM15 36h1v1h-1zM18 36h1v1h-1zM21 36h1v1h-1zM23 36h1v1h-1'
+    'zM26 36h4v1h-4zM31 36h3v1h-3zM35 36h1v1h-1zM39 36h2v1h-2zM42 36h1v1h-1zM47 36h2v1h-2zM8 37h3v1h-3zM13 37h1v1h-'
+    '1zM15 37h1v1h-1zM17 37h1v1h-1zM19 37h2v1h-2zM23 37h5v1h-5zM29 37h1v1h-1zM31 37h4v1h-4zM37 37h1v1h-1zM41 37h3v1'
+    'h-3zM45 37h1v1h-1zM47 37h1v1h-1zM49 37h1v1h-1zM6 38h2v1h-2zM9 38h2v1h-2zM12 38h3v1h-3zM19 38h1v1h-1zM21 38h8v1'
+    'h-8zM32 38h1v1h-1zM34 38h1v1h-1zM43 38h3v1h-3zM47 38h3v1h-3zM6 39h1v1h-1zM9 39h2v1h-2zM17 39h1v1h-1zM19 39h1v1'
+    'h-1zM21 39h1v1h-1zM24 39h2v1h-2zM27 39h2v1h-2zM30 39h1v1h-1zM33 39h1v1h-1zM36 39h1v1h-1zM38 39h1v1h-1zM41 39h1'
+    'v1h-1zM43 39h1v1h-1zM45 39h1v1h-1zM47 39h4v1h-4zM10 40h1v1h-1zM12 40h1v1h-1zM16 40h3v1h-3zM20 40h2v1h-2zM23 40'
+    'h2v1h-2zM28 40h1v1h-1zM30 40h2v1h-2zM33 40h1v1h-1zM36 40h2v1h-2zM40 40h3v1h-3zM44 40h1v1h-1zM50 40h1v1h-1zM7 4'
+    '1h4v1h-4zM13 41h2v1h-2zM16 41h4v1h-4zM22 41h2v1h-2zM25 41h1v1h-1zM31 41h1v1h-1zM34 41h1v1h-1zM40 41h3v1h-3zM44'
+    ' 41h1v1h-1zM46 41h1v1h-1zM49 41h2v1h-2zM6 42h1v1h-1zM9 42h2v1h-2zM12 42h1v1h-1zM14 42h4v1h-4zM22 42h1v1h-1zM24'
+    ' 42h1v1h-1zM26 42h5v1h-5zM36 42h2v1h-2zM39 42h1v1h-1zM42 42h6v1h-6zM50 42h1v1h-1zM14 43h1v1h-1zM16 43h2v1h-2zM'
+    '19 43h1v1h-1zM24 43h3v1h-3zM30 43h1v1h-1zM32 43h1v1h-1zM34 43h2v1h-2zM37 43h3v1h-3zM41 43h2v1h-2zM46 43h2v1h-2'
+    'zM49 43h1v1h-1zM6 44h7v1h-7zM16 44h1v1h-1zM20 44h1v1h-1zM22 44h1v1h-1zM26 44h1v1h-1zM28 44h1v1h-1zM30 44h1v1h-'
+    '1zM32 44h6v1h-6zM40 44h3v1h-3zM44 44h1v1h-1zM46 44h1v1h-1zM48 44h2v1h-2zM6 45h1v1h-1zM12 45h1v1h-1zM15 45h2v1h'
+    '-2zM18 45h1v1h-1zM20 45h1v1h-1zM23 45h2v1h-2zM26 45h1v1h-1zM30 45h1v1h-1zM32 45h1v1h-1zM34 45h1v1h-1zM36 45h1v'
+    '1h-1zM38 45h2v1h-2zM42 45h1v1h-1zM46 45h1v1h-1zM48 45h2v1h-2zM6 46h1v1h-1zM8 46h3v1h-3zM12 46h1v1h-1zM16 46h1v'
+    '1h-1zM19 46h1v1h-1zM23 46h1v1h-1zM26 46h7v1h-7zM35 46h1v1h-1zM38 46h9v1h-9zM48 46h3v1h-3zM6 47h1v1h-1zM8 47h3v'
+    '1h-3zM12 47h1v1h-1zM14 47h3v1h-3zM19 47h1v1h-1zM21 47h1v1h-1zM23 47h1v1h-1zM25 47h2v1h-2zM28 47h2v1h-2zM31 47h'
+    '1v1h-1zM37 47h6v1h-6zM45 47h1v1h-1zM48 47h2v1h-2zM6 48h1v1h-1zM8 48h3v1h-3zM12 48h1v1h-1zM14 48h2v1h-2zM17 48h'
+    '2v1h-2zM21 48h2v1h-2zM24 48h2v1h-2zM28 48h2v1h-2zM32 48h1v1h-1zM35 48h1v1h-1zM39 48h2v1h-2zM42 48h1v1h-1zM45 4'
+    '8h1v1h-1zM48 48h1v1h-1zM50 48h1v1h-1zM6 49h1v1h-1zM12 49h1v1h-1zM14 49h4v1h-4zM20 49h3v1h-3zM24 49h1v1h-1zM27 '
+    '49h1v1h-1zM30 49h6v1h-6zM38 49h2v1h-2zM43 49h2v1h-2zM46 49h2v1h-2zM50 49h1v1h-1zM6 50h7v1h-7zM14 50h2v1h-2zM17'
+    ' 50h3v1h-3zM23 50h1v1h-1zM28 50h1v1h-1zM32 50h1v1h-1zM34 50h1v1h-1zM40 50h1v1h-1zM43 50h6v1h-6z"/></svg>'
+)
+
+
+def _tlv(id_, valor):
+    return "%s%02d%s" % (id_, len(valor), valor)
+
+
+def _crc16(texto):
+    crc = 0xFFFF
+    for b in texto.encode():
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return "%04X" % crc
+
+
+def pix_copia_e_cola(chave=PIX_CHAVE, nome=PIX_NOME, cidade=PIX_CIDADE):
+    """Código "Pix copia e cola" (BR Code estático, sem valor: a pessoa escolhe quanto doar)."""
+    p = (_tlv("00", "01") + _tlv("26", _tlv("00", "br.gov.bcb.pix") + _tlv("01", chave)) + _tlv("52", "0000")
+         + _tlv("53", "986") + _tlv("58", "BR") + _tlv("59", nome[:25]) + _tlv("60", cidade[:15])
+         + _tlv("62", _tlv("05", "***")) + "6304")
+    return p + _crc16(p)
+
 
 def _proxy_ativo():
     """Só confia no X-Forwarded-For quando há mesmo um proxy na frente; senão qualquer um forja o IP e burla os limites."""
@@ -1384,6 +1484,23 @@ HTML = r"""
   }
   .brand:hover .brand-logo { transform: scale(1.04); box-shadow: 0 0 0 1px rgba(88, 232, 121, .6), 0 0 34px rgba(88, 232, 121, .42); }
   @media (min-width: 900px) { .brand-logo { width: 110px; height: 110px; border-radius: 24px; } }
+
+  .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .btn-pix {
+    display: inline-flex; align-items: center; gap: 8px; max-width: 200px; padding: 11px 16px;
+    border: 0; border-radius: 99px; cursor: pointer; text-align: left; line-height: 1.2;
+    background: var(--grad); color: #0b0c12; font-weight: 800; font-size: .84rem;
+    box-shadow: 0 0 22px rgba(88, 232, 121, .35); transition: transform .12s ease, filter .15s ease;
+  }
+  .btn-pix:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .btn-pix i { font-style: normal; font-size: 1.05rem; }
+  .pix-modal { text-align: center; }
+  .pix-qr { width: 230px; max-width: 100%; margin: 14px auto 6px; padding: 10px; border-radius: 14px; background: #fff; }
+  .pix-qr svg { display: block; width: 100%; height: auto; }
+  .pix-chave { margin: 10px 0 0; padding: 10px 12px; border: 1px dashed var(--borda-forte); border-radius: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem; color: var(--texto); overflow-wrap: anywhere; user-select: all; }
+  .pix-rotulo { margin: 14px 0 0; font-size: .8rem; font-weight: 700; color: var(--mutado); }
+  .pix-botoes { display: grid; gap: 8px; margin-top: 12px; }
+  .pix-botoes .btn-mini { margin-top: 0; }
 
   /* ---------- estrutura ---------- */
   .wrap { width: 100%; max-width: none; margin: 0 auto; padding: 16px 16px calc(36px + env(safe-area-inset-bottom)); }
@@ -1654,6 +1771,7 @@ HTML = r"""
       <a class="brand" href="/" aria-label="Clipador de lives, página inicial">
         <img class="brand-logo" src="/logo.jpg" width="92" height="92" alt="Clipes das Lives" decoding="async" fetchpriority="high">
       </a>
+      <button type="button" class="btn-pix" id="abrir-pix"><i aria-hidden="true">♥</i><span>Ajude a manter o site no ar</span></button>
     </div>
   </header>
 
@@ -1813,6 +1931,20 @@ HTML = r"""
       <p id="feedback-status" role="status" aria-live="polite"></p>
     </form>
   </div>
+  <div class="modal-fundo" id="pix" role="dialog" aria-modal="true" aria-labelledby="pix-titulo">
+    <div class="modal pix-modal">
+      <h2 id="pix-titulo">Ajude a manter o site no ar</h2>
+      <p>O Clipador é gratuito, mas o servidor tem custo. Qualquer valor ajuda. Obrigado! 💚</p>
+      <div class="pix-qr"><!--PIX_QR--></div>
+      <p class="pix-rotulo">Chave Pix (aleatória)</p>
+      <div class="pix-chave">__PIXCHAVE__</div>
+      <div class="pix-botoes">
+        <button type="button" class="btn-mini" id="copiar-pix-chave" data-copiar="__PIXCHAVE__">Copiar chave Pix</button>
+        <button type="button" class="btn-mini sec" id="copiar-pix-codigo" data-copiar="__PIXCOPIA__">Copiar Pix copia e cola</button>
+        <button type="button" class="btn-mini sec" id="fechar-pix">Fechar</button>
+      </div>
+    </div>
+  </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script nonce="__NONCE__">
@@ -1916,6 +2048,38 @@ document.addEventListener('keydown', function (e) {
 $('abrir-termos').addEventListener('click', abrirTermos);
 $('fechar-termos').addEventListener('click', fecharTermos);
 $('termos').addEventListener('click', function (e) { if (e.target === this) { fecharTermos(); } });
+
+// ---------- Pix ----------
+async function copiarTexto(texto, aviso) {
+  try {
+    await navigator.clipboard.writeText(texto);
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e2) {}
+    document.body.removeChild(ta);
+    if (!ok) { toast('Não consegui copiar. Segure a chave para copiar na mão.'); return; }
+  }
+  toast(aviso);
+}
+let focoPix = null;
+function abrirPix() { focoPix = document.activeElement; $('pix').style.display = 'flex'; $('copiar-pix-chave').focus(); }
+function fecharPix() {
+  $('pix').style.display = 'none';
+  if (focoPix && focoPix.focus) { focoPix.focus(); }
+}
+$('abrir-pix').addEventListener('click', abrirPix);
+$('fechar-pix').addEventListener('click', fecharPix);
+$('pix').addEventListener('click', function (e) { if (e.target === this) { fecharPix(); } });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('pix').style.display === 'flex') { fecharPix(); } });
+$('copiar-pix-chave').addEventListener('click', function () { copiarTexto(this.dataset.copiar, 'Chave Pix copiada. Obrigado pelo apoio!'); });
+$('copiar-pix-codigo').addEventListener('click', function () { copiarTexto(this.dataset.copiar, 'Pix copia e cola copiado. Obrigado pelo apoio!'); });
 
 // ---------- feedback ----------
 function fecharFeedback() { $('feedback').style.display = 'none'; }
@@ -2457,6 +2621,14 @@ def _montar_pagina():
         contato = ' Contato: <a href="mailto:%s">%s</a>.' % (c, c)
     teste = ('<button type="button" class="btn-mini sec" id="btn-testar">'
              'Testar se o servidor lê a Kick</button>') if TESTE_ATIVO else ""
+    pix = pix_copia_e_cola()
+    if PIX_QR_PARA == pix:
+        qr = PIX_QR_SVG
+    else:
+        qr = ""
+        log.warning("O QR do Pix não bate com a chave/nome/cidade atuais: mostrando só o copia e cola. Gere o QR de novo.")
+    html = html.replace("<!--PIX_QR-->", qr).replace("__PIXCOPIA__", escape(pix, quote=True))
+    html = html.replace("__PIXCHAVE__", escape(PIX_CHAVE, quote=True))
     html = html.replace("<!--TESTE-->", teste).replace("__MAXMIN__", str(MAX_CAPTURA_MIN))
     return html.replace("<!--CONTATO-->", contato)
 
