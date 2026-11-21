@@ -17,6 +17,7 @@ Variáveis novas de segurança:
     CLIPADOR_MAX_DISCO_MB=4096  para de aceitar tarefas quando a pasta de clipes passa desse tamanho (0 = sem limite).
     CLIPADOR_TESTE=1          liga a rota /api/vod/teste e o botão de diagnóstico (deixe desligado em produção).
 """
+import base64
 import functools
 import json
 import logging
@@ -1581,19 +1582,52 @@ def diagnosticar_youtube(url):
     """Consulta metadados com yt-dlp sem baixar o vídeo; não altera os fluxos da Kick."""
     if not youtube_url_permitida(url):
         return None, "Cole um link válido de vídeo ou live do YouTube."
+    # Cookies opcionais entram somente por variável de ambiente protegida do servidor.
+    # Nunca aceitar caminho/conteúdo de cookies enviado pelo visitante.
+    cookie_path = None
+    cookie_b64 = os.environ.get("YOUTUBE_COOKIES_B64", "").strip()
     cmd = [
         "yt-dlp", "--no-warnings", "--no-playlist", "--skip-download",
         "--dump-single-json", "--socket-timeout", "20", "--retries", "1",
-        "--", url.strip()
     ]
     try:
+        if cookie_b64:
+            try:
+                cookie_bytes = base64.b64decode(cookie_b64, validate=True)
+                cookie_text = cookie_bytes.decode("utf-8-sig")
+            except (ValueError, UnicodeDecodeError):
+                return None, "A configuração segura de cookies do YouTube está inválida."
+            primeira = cookie_text.splitlines()[0].strip() if cookie_text.splitlines() else ""
+            if primeira not in ("# Netscape HTTP Cookie File", "# HTTP Cookie File"):
+                return None, "O arquivo de cookies do YouTube precisa estar no formato Netscape cookies.txt."
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\\n",
+                                             prefix="yt-cookies-", suffix=".txt",
+                                             delete=False) as cf:
+                cookie_path = cf.name
+                cf.write(cookie_text)
+            try:
+                os.chmod(cookie_path, 0o600)
+            except OSError:
+                pass
+            cmd += ["--cookies", cookie_path]
+        cmd += ["--", url.strip()]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     except FileNotFoundError:
         return None, "O yt-dlp não está instalado no servidor."
     except subprocess.TimeoutExpired:
         return None, "O YouTube demorou demais para responder. Tente novamente."
+    finally:
+        if cookie_path:
+            try:
+                os.remove(cookie_path)
+            except OSError:
+                pass
     if r.returncode != 0 or not r.stdout.strip():
         detalhe = (r.stderr or "O yt-dlp não retornou informações do vídeo.").strip()
+        if "Sign in to confirm" in detalhe or "not a bot" in detalhe.lower():
+            return None, ("O YouTube exige autenticação para este vídeo. Configure YOUTUBE_COOKIES_B64 "
+                          "nas variáveis privadas do servidor usando um cookies.txt seu, no formato Netscape. "
+                          "Não envie cookies pelo formulário nem compartilhe esse arquivo.")
         return None, detalhe[-500:]
     try:
         info = json.loads(r.stdout.strip().splitlines()[-1])
