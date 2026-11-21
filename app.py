@@ -843,6 +843,13 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
     while paginas < 4000:
         dados, erro = kick_get_json(
             "https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (cid, cursor))
+        # MUDANÇA: se a Kick pedir calma (429), espera e tenta de novo
+        tentativas = 0
+        while dados is None and "429" in (erro or "") and tentativas < 5:
+            tentativas += 1
+            time.sleep(5 * tentativas)
+            dados, erro = kick_get_json(
+                "https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (cid, cursor))
         if dados is None:
             return tempos, ("falha na página %d: %s" % (paginas, erro)) if not tempos else ""
         bloco = dados.get("data") or {}
@@ -873,7 +880,7 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
         if sem_novas >= 30:
             break
         cursor = str(proximo)
-        time.sleep(0.15)
+        time.sleep(0.3)  # MUDANÇA: mais devagar para não tomar bloqueio
     return tempos, ""
 
 
@@ -965,7 +972,12 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade):
                   msg="Achei %d momentos. Cortando..." % len(picos),
                   diag="Chat: %d mensagens analisadas" % len(tempos))
 
-    stream, headers, erro_yt = stream_da_vod(slug, escolhida["uuid"])
+    # MUDANÇA: usa o link do vídeo que a lista já trouxe (evita o 429 do yt-dlp)
+    src = escolhida.get("source") or ""
+    if src.startswith("http"):
+        stream, headers, erro_yt = src, {}, ""
+    else:
+        stream, headers, erro_yt = stream_da_vod(slug, escolhida["uuid"])
     if not stream:
         atualizar_job(job_id, estado="erro", msg="Não consegui o vídeo dessa live.",
                       diag=erro_yt or "sem mensagem")
