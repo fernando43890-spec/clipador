@@ -21,6 +21,10 @@ TIKTOK = [
     {"nome": "Fluxo Rajah", "usuario": "fluxo_rajah"},
     {"nome": "Uriel", "usuario": "uriel.wq"},
     {"nome": "Levelup", "usuario": "levelup_007"},
+    {"nome": "Cris Guedes", "usuario": "crisguedes_oficial"},
+    {"nome": "Isash", "usuario": "isashxwtyyy"},
+    {"nome": "Thay FPS", "usuario": "thayfps_"},
+    {"nome": "Fernanda Hanzen", "usuario": "fernandahanzen"},
 ]
 TT_CACHE = {"hora": 0, "dados": [], "rodando": False}
 TT_LOCK = threading.Lock()
@@ -33,7 +37,7 @@ PAGINA = """
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clipador de lives</title>
+<title>Clipador de lives – Kick e TikTok</title>
 <style>
   :root {
     --bg: #07060b;
@@ -47,6 +51,9 @@ PAGINA = """
     --texto: #f5f3ff;
     --mutado: #a69ec2;
     --vivo: #ef4444;
+    --tt-rosa: #fe2c55;
+    --tt-azul: #25f4ee;
+    --grad: linear-gradient(135deg, #00ff38 0%, #25f4ee 52%, #fe2c55 100%);
   }
 
   * {
@@ -63,7 +70,9 @@ PAGINA = """
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
     color: var(--texto);
     background:
-      radial-gradient(ellipse at 50% -8%, rgba(0, 255, 56, 0.15), transparent 55%),
+      radial-gradient(ellipse at 18% -8%, rgba(0, 255, 56, 0.15), transparent 55%),
+      radial-gradient(ellipse at 85% -8%, rgba(254, 44, 85, 0.14), transparent 55%),
+      radial-gradient(ellipse at 52% 0%, rgba(37, 244, 238, 0.07), transparent 50%),
       var(--bg);
     padding-bottom: 40px;
   }
@@ -386,17 +395,98 @@ PAGINA = """
     margin-left: 8px;
   }
 
+  .hero-titulo {
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .btn-principal {
+    background: var(--grad);
+  }
+  .btn-principal:hover {
+    background: var(--grad);
+    filter: brightness(1.1);
+  }
+  .btn-topo {
+    background: var(--grad);
+  }
+  .logo-box {
+    border-color: rgba(37, 244, 238, 0.4);
+  }
+  #tt-box {
+    border-color: rgba(254, 44, 85, 0.35);
+  }
+  #tt-box .diag-topo {
+    color: var(--tt-azul);
+  }
+  #tt-box .btn-mini {
+    background: linear-gradient(135deg, #25f4ee, #fe2c55);
+    color: #fff;
+  }
+  #tt-box .ponto {
+    background: var(--tt-rosa);
+  }
+
   .tt-card {
     background: var(--surface-2);
-    border: 1px solid var(--borda);
+    border: 1px solid rgba(254, 44, 85, 0.3);
     border-radius: 12px;
     padding: 12px;
+  }
+  .tt-capa {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 10px;
+    background: #000 center/cover no-repeat;
+    margin-bottom: 10px;
+    position: relative;
+    overflow: hidden;
+  }
+  .tt-capa img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .tt-capa-vazia {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(37, 244, 238, 0.25), rgba(254, 44, 85, 0.35));
+    font-size: 2.6rem;
+    font-weight: 800;
+    color: #fff;
+  }
+  .tt-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: var(--tt-rosa);
+    color: #fff;
+    font-size: .68rem;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 6px;
+    letter-spacing: .04em;
+  }
+  .tt-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    vertical-align: middle;
+    margin-right: 8px;
+    border: 1px solid rgba(37, 244, 238, 0.5);
   }
   .tt-card .live-topo {
     margin-bottom: 6px;
   }
   .tt-link {
-    color: var(--kick-brilho);
+    color: var(--tt-azul);
     font-size: .82rem;
     text-decoration: none;
     font-weight: 600;
@@ -435,11 +525,11 @@ PAGINA = """
   <main class="wrap">
     <section class="hero-card">
       <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
-      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
+      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick ou do TikTok, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
 
       <div class="campo">
         <label for="url">Link da live</label>
-        <input id="url" type="url" placeholder="Cole o link da Kick...">
+        <input id="url" type="url" placeholder="Cole o link da Kick ou do TikTok...">
       </div>
 
       <div class="campo">
@@ -633,6 +723,20 @@ setInterval(filtrarOnline, 30000);
 
 let assinaturaTT = '';
 
+function esconder(img) {
+  img.style.display = 'none';
+}
+
+function semImagem(img) {
+  const card = img.closest('.tt-card');
+  const nome = card ? card.querySelector('.live-topo span') : null;
+  const letra = nome ? (nome.textContent.trim().charAt(0).toUpperCase() || '?') : '?';
+  const vazio = document.createElement('div');
+  vazio.className = 'tt-capa-vazia';
+  vazio.textContent = letra;
+  img.replaceWith(vazio);
+}
+
 function esc(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -646,7 +750,7 @@ function usarTikTok(usuario) {
 function montarTikTok(lista) {
   const box = document.getElementById('lives-tt');
   const visiveis = lista.filter(function (c) { return c.online !== false; });
-  const assinatura = visiveis.map(function (c) { return c.usuario + ':' + c.online; }).join('|');
+  const assinatura = visiveis.map(function (c) { return c.usuario + ':' + c.online + ':' + (c.capa || ''); }).join('|');
   if (assinatura === assinaturaTT) { return; }
   assinaturaTT = assinatura;
   if (visiveis.length === 0) {
@@ -657,8 +761,15 @@ function montarTikTok(lista) {
   visiveis.forEach(function (c) {
     const incerto = c.online === null;
     const info = incerto ? '<span class="viewers">status incerto</span>' : '';
-    h += '<div class="live-item"><div class="tt-card">' +
-      '<div class="live-topo"><span><span class="ponto"' + (incerto ? ' style="background:#7c7496"' : '') + '></span>' + c.nome + info + '</span>' +
+    const img = c.capa || c.foto;
+    const inicial = esc((c.nome || '?').charAt(0).toUpperCase());
+    const capa = '<div class="tt-capa">' +
+      (img ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="semImagem(this)">'
+           : '<div class="tt-capa-vazia">' + inicial + '</div>') +
+      (incerto ? '' : '<span class="tt-badge">AO VIVO</span>') + '</div>';
+    const avatar = c.foto ? '<img class="tt-avatar" src="' + esc(c.foto) + '" alt="" referrerpolicy="no-referrer" onerror="esconder(this)">' : '';
+    h += '<div class="live-item"><div class="tt-card">' + capa +
+      '<div class="live-topo"><span>' + avatar + '<span class="ponto"' + (incerto ? ' style="background:#7c7496"' : '') + '></span>' + esc(c.nome) + info + '</span>' +
       '<button class="btn-mini" data-usuario="' + c.usuario + '" onclick="usarTikTok(this.dataset.usuario)">Usar esta live</button></div>' +
       '<a class="tt-link" href="https://www.tiktok.com/@' + c.usuario + '/live" target="_blank" rel="noopener">Abrir no TikTok ↗</a>' +
       (incerto && c.detalhe ? '<p class="tt-vazio">Motivo: ' + esc(c.detalhe) + '</p>' : '') +
@@ -832,6 +943,42 @@ def normalizar_url(url):
     return url
 
 
+TT_MIDIA = {}
+
+
+def _primeira_url(valor):
+    """Aceita string, dict com urlList/url_list ou lista; devolve a primeira URL https."""
+    if isinstance(valor, str):
+        return valor if valor.startswith("http") else ""
+    if isinstance(valor, list):
+        for v in valor:
+            r = _primeira_url(v)
+            if r:
+                return r
+        return ""
+    if isinstance(valor, dict):
+        for chave in ("urlList", "url_list", "url", "uri"):
+            if chave in valor:
+                r = _primeira_url(valor[chave])
+                if r:
+                    return r
+    return ""
+
+
+def _guardar_midia_tiktok(usuario, room, user):
+    capa = ""
+    for chave in ("coverUrl", "cover", "squareCoverImg"):
+        capa = _primeira_url(room.get(chave))
+        if capa:
+            break
+    foto = ""
+    for chave in ("avatarLarger", "avatarMedium", "avatarThumb"):
+        foto = _primeira_url(user.get(chave)) or _primeira_url(room.get(chave))
+        if foto:
+            break
+    TT_MIDIA[usuario] = {"capa": capa, "foto": foto}
+
+
 def checar_tiktok_api(usuario):
     """Pergunta direto ao TikTok. Retorna (True/False/None, detalhe, viewers)."""
     url = (
@@ -860,6 +1007,7 @@ def checar_tiktok_api(usuario):
     room = dados.get("liveRoom") or {}
     if status == 2:
         viewers = (room.get("liveRoomStats") or {}).get("userCount")
+        _guardar_midia_tiktok(usuario, room, user)
         return True, "", viewers if isinstance(viewers, int) else None
     if status is not None:
         return False, "", None
@@ -937,6 +1085,8 @@ def atualizar_tiktok():
                 "usuario": c["usuario"],
                 "online": resultados[i][0],
                 "detalhe": resultados[i][1],
+                "capa": TT_MIDIA.get(c["usuario"], {}).get("capa", ""),
+                "foto": TT_MIDIA.get(c["usuario"], {}).get("foto", ""),
             }
             for i, c in enumerate(TIKTOK)
         ]
