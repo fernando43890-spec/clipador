@@ -137,7 +137,7 @@ HTML = r"""
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#08090e">
+<meta name="theme-color" content="#050906">
 <meta name="color-scheme" content="dark">
 <meta name="description" content="Corte lives da Kick em clipes de 30 segundos ou 1 minuto, em MP4 horizontal ou vertical 9:16.">
 <meta property="og:type" content="website">
@@ -147,21 +147,20 @@ HTML = r"""
 <title>Clipador de lives – Kick</title>
 <style nonce="__NONCE__">
   :root {
-    --bg: #08090e;
-    --surface: #12131b;
-    --surface-2: #191b26;
-    --input: #151822;
-    --borda: rgba(180, 184, 210, .16);
-    --borda-forte: rgba(180, 184, 210, .28);
+    --bg: #050906;
+    --surface: #0c120e;
+    --surface-2: #121a15;
+    --input: #0e1610;
+    --borda: rgba(110, 220, 145, .16);
+    --borda-forte: rgba(110, 220, 145, .30);
     --verde: #58e879;
     --verde-2: #76f59a;
-    --ciano: #29dce8;
-    --rosa: #ff3264;
+    --verde-esc: #18883f;
     --texto: #f7f7fb;
-    --mutado: #aeb2c2;
+    --mutado: #a9bbae;
     --erro: #ff7a93;
-    --grad: linear-gradient(100deg, #27f0ee 0%, #6fd6d6 45%, #ff3264 100%);
-    --grad-titulo: linear-gradient(100deg, #7df5a0 0%, #b9d4bc 48%, #ff5c82 100%);
+    --grad: linear-gradient(100deg, #6df58f 0%, #34c96a 50%, #18883f 100%);
+    --grad-titulo: linear-gradient(100deg, #a6ffc0 0%, #58e879 45%, #1f9d4d 100%);
     --fonte: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 
@@ -171,8 +170,9 @@ HTML = r"""
     margin: 0; min-height: 100vh;
     font-family: var(--fonte); color: var(--texto); line-height: 1.45;
     background:
-      radial-gradient(ellipse at 8% -6%, rgba(78, 227, 154, .08), transparent 42%),
-      radial-gradient(ellipse at 96% 0%, rgba(255, 50, 100, .07), transparent 40%),
+      radial-gradient(ellipse at 8% -6%, rgba(88, 232, 121, .18), transparent 46%),
+      radial-gradient(ellipse at 96% 0%, rgba(24, 136, 63, .16), transparent 42%),
+      linear-gradient(180deg, #0a2412 0%, rgba(5, 9, 6, 0) 600px),
       var(--bg);
   }
   .oculto { display: none; }
@@ -200,7 +200,7 @@ HTML = r"""
 
   /* ---------- cartões ---------- */
   .hero-card {
-    background: linear-gradient(150deg, #181a25, #12131b);
+    background: linear-gradient(150deg, #0f1a13, #0a100c);
     border: 1px solid var(--borda-forte); border-radius: 18px; padding: 22px 18px;
     box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
   }
@@ -245,14 +245,14 @@ HTML = r"""
   .fmt-linha .dica { margin: 0; }
   .linha-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   #seg { border-color: rgba(88, 232, 121, .6); }
-  #formato { border-color: rgba(41, 220, 232, .65); }
+  #formato { border-color: rgba(88, 232, 121, .65); }
   .fmt-cel {
     flex: none; width: 66px; height: 70px; display: grid; place-items: center;
     background: var(--input); border: 1px solid var(--borda); border-radius: 11px;
   }
-  .fmt-prev { position: relative; overflow: hidden; width: 48px; height: 27px; border-radius: 4px; background: #2b2f40; transition: width .2s ease, height .2s ease; }
-  .fmt-prev i { position: absolute; inset: 0; background: linear-gradient(110deg, var(--ciano), var(--verde)); }
-  .fmt-cel[data-fmt="vertical_blur"] .fmt-prev { width: 34px; height: 60px; background: linear-gradient(160deg, rgba(41, 220, 232, .4), rgba(88, 232, 121, .4)); }
+  .fmt-prev { position: relative; overflow: hidden; width: 48px; height: 27px; border-radius: 4px; background: #1c2a21; transition: width .2s ease, height .2s ease; }
+  .fmt-prev i { position: absolute; inset: 0; background: linear-gradient(110deg, var(--verde-esc), var(--verde)); }
+  .fmt-cel[data-fmt="vertical_blur"] .fmt-prev { width: 34px; height: 60px; background: linear-gradient(160deg, rgba(24, 136, 63, .5), rgba(88, 232, 121, .4)); }
   .fmt-cel[data-fmt="vertical_blur"] .fmt-prev i { top: 34%; bottom: 34%; }
 
   button { font: inherit; }
@@ -275,7 +275,7 @@ HTML = r"""
   .btn-mini.sec { background: transparent; color: var(--texto); border-color: var(--borda-forte); }
   .btn-mini.sec:hover { border-color: var(--verde-2); }
   .btn-mini.off { color: var(--mutado); }
-  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--ciano); outline-offset: 2px; }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
 
   /* ---------- status e progresso ---------- */
   .status-topo { display: flex; justify-content: flex-end; margin-bottom: 8px; }
@@ -286,7 +286,7 @@ HTML = r"""
   .rotulo[data-estado="erro"] { color: var(--erro); }
   .rotulo[data-estado="erro"]::before { background: var(--erro); }
   .progresso { height: 6px; border-radius: 99px; background: rgba(180, 184, 210, .14); overflow: hidden; }
-  .progresso span { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--verde), var(--ciano)); transition: width .3s ease; }
+  .progresso span { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--verde-esc), var(--verde)); transition: width .3s ease; }
   .progresso[data-estado="trabalhando"] span { width: 38%; animation: corre 1.4s ease-in-out infinite; }
   .progresso[data-estado="fim"] span { width: 100%; }
   .progresso[data-estado="erro"] span { width: 100%; background: var(--erro); }
@@ -324,17 +324,17 @@ HTML = r"""
   }
   .live-card {
     min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 6px;
-    border: 1.5px solid rgba(88, 232, 121, .55); border-radius: 14px; background: #0e1017; scroll-snap-align: start;
+    border: 1.5px solid rgba(88, 232, 121, .55); border-radius: 14px; background: #0a100c; scroll-snap-align: start;
   }
   .live-card.destaque {
     padding: 8px; border-width: 2px; border-color: var(--verde);
-    background: linear-gradient(160deg, #121c18, #0e1017);
+    background: linear-gradient(160deg, #0f1c14, #0a100c);
     box-shadow: 0 0 0 1px rgba(88, 232, 121, .22), 0 0 32px rgba(88, 232, 121, .16);
   }
   .live-card.offline { border-color: var(--borda); opacity: .85; }
   .live-media { position: relative; aspect-ratio: 16/9; border-radius: 9px; overflow: hidden; background: #000; }
   .live-media .player { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
-  .live-thumb { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(135deg, #1b2430, #12131b); }
+  .live-thumb { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(135deg, #12201a, #0a100c); }
   .live-letra { font-size: 2rem; font-weight: 800; color: rgba(255, 255, 255, .3); }
   .live-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .2s ease; }
   .play-over {
@@ -348,7 +348,7 @@ HTML = r"""
   .badge-live { position: absolute; top: 8px; left: 8px; z-index: 1; background: #e5253d; color: #fff; font-size: .68rem; font-weight: 800; letter-spacing: .04em; padding: 3px 7px; border-radius: 5px; pointer-events: none; }
   .chip-viewers { position: absolute; left: 8px; bottom: 8px; z-index: 1; background: rgba(0, 0, 0, .68); color: #fff; font-size: .74rem; font-weight: 600; padding: 3px 9px; border-radius: 99px; pointer-events: none; }
   .live-info { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 0 2px; }
-  .avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: #232637; display: grid; place-items: center; font-weight: 800; font-size: .9rem; color: #cfd2de; }
+  .avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: #16231b; display: grid; place-items: center; font-weight: 800; font-size: .9rem; color: #cfd2de; }
   .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .live-textos { flex: 1; min-width: 0; }
   .live-nome { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: .92rem; }
@@ -431,7 +431,7 @@ HTML = r"""
   .toast {
     position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 60;
     transform: translate(-50%, 16px); opacity: 0; pointer-events: none; max-width: 90vw;
-    background: #232637; border: 1px solid var(--borda-forte); border-radius: 99px;
+    background: #16231b; border: 1px solid var(--borda-forte); border-radius: 99px;
     padding: 10px 18px; font-size: .88rem; text-align: center; transition: opacity .2s ease, transform .2s ease;
   }
   .toast.on { opacity: 1; transform: translate(-50%, 0); }
