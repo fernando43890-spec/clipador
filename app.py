@@ -148,7 +148,8 @@ HTML = r"""
     --texto: #f7f7fb;
     --mutado: #aeb2c2;
     --erro: #ff7a93;
-    --grad: linear-gradient(110deg, #29dce8 0%, #4ee39a 50%, #ff3264 100%);
+    --grad: linear-gradient(100deg, #27f0ee 0%, #6fd6d6 45%, #ff3264 100%);
+    --grad-titulo: linear-gradient(100deg, #7df5a0 0%, #b9d4bc 48%, #ff5c82 100%);
     --fonte: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 
@@ -165,22 +166,12 @@ HTML = r"""
   .oculto { display: none; }
 
   /* ---------- topo ---------- */
-  .topbar {
-    position: sticky; top: 0; z-index: 20;
-    background: rgba(8, 9, 14, .88);
-    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--borda);
-    padding-top: env(safe-area-inset-top);
-  }
-  .topbar-inner { max-width: 560px; margin: 0 auto; padding: 12px 16px; }
-  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--texto); text-decoration: none; }
-  .logo-box {
-    width: 36px; height: 36px; border-radius: 10px; background: var(--surface);
-    border: 1px solid var(--borda-forte); display: grid; place-items: center;
-  }
-  .logo-box svg { width: 22px; height: 22px; }
-  .brand-nome { font-weight: 750; font-size: 1.08rem; letter-spacing: -.02em; line-height: 1.1; }
-  .brand-sub { display: block; font-weight: 500; font-size: .76rem; color: var(--verde); letter-spacing: 0; margin-top: 1px; }
+  .topbar { padding-top: env(safe-area-inset-top); }
+  .topbar-inner { max-width: 560px; margin: 0 auto; padding: 22px 16px 4px; }
+  .brand { display: inline-block; color: var(--texto); text-decoration: none; }
+  .brand-nome { display: block; font-weight: 800; font-size: 1.6rem; letter-spacing: -.04em; line-height: 1; }
+  .brand-sub { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: 1.05rem; font-weight: 700; color: var(--verde); letter-spacing: -.01em; }
+  .brand-sub::before { content: ''; width: 22px; height: 3px; border-radius: 2px; background: var(--verde); }
 
   /* ---------- estrutura ---------- */
   .wrap { max-width: 560px; margin: 0 auto; padding: 16px 16px calc(36px + env(safe-area-inset-bottom)); }
@@ -202,7 +193,7 @@ HTML = r"""
   .hero-titulo {
     margin: 0; font-size: clamp(1.65rem, 6.4vw, 2.1rem); font-weight: 800;
     letter-spacing: -.03em; line-height: 1.12;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text;
+    background: var(--grad-titulo); -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
   }
   .hero-sub { margin: 10px 0 20px; color: #d3d5df; font-size: .96rem; line-height: 1.5; max-width: 60ch; }
@@ -212,7 +203,6 @@ HTML = r"""
     padding: 15px 16px;
   }
   .card-live { padding: 14px; }
-  .lives-box { margin-top: 14px; }
   .titulo-caixa { display: block; font-size: .95rem; font-weight: 700; color: var(--texto); margin-bottom: 10px; }
 
   /* ---------- formulário ---------- */
@@ -238,6 +228,10 @@ HTML = r"""
 
   .fmt-linha { display: flex; gap: 10px; align-items: center; }
   .fmt-linha select { flex: 1; min-width: 0; }
+  .fmt-linha .dica { margin: 0; }
+  .linha-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #seg { border-color: rgba(88, 232, 121, .6); }
+  #formato { border-color: rgba(41, 220, 232, .65); }
   .fmt-cel {
     flex: none; width: 66px; height: 70px; display: grid; place-items: center;
     background: var(--input); border: 1px solid var(--borda); border-radius: 11px;
@@ -271,18 +265,21 @@ HTML = r"""
   button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--ciano); outline-offset: 2px; }
 
   /* ---------- status e progresso ---------- */
-  #status { position: relative; padding-left: 24px; font-weight: 600; min-height: 22px; }
-  #status::before {
-    content: ''; position: absolute; left: 0; top: .42em; width: 10px; height: 10px;
-    border-radius: 50%; background: #6d7186;
-  }
-  #status[data-estado="trabalhando"]::before { background: var(--verde); box-shadow: 0 0 0 4px rgba(88, 232, 121, .18); }
-  #status[data-estado="fim"]::before { background: var(--verde); }
-  #status[data-estado="erro"]::before { background: var(--erro); }
-  #status[data-estado="erro"] { color: var(--erro); }
-  .progresso { height: 4px; margin-top: 12px; border-radius: 99px; background: rgba(180, 184, 210, .14); overflow: hidden; }
-  .progresso span { display: block; height: 100%; width: 38%; border-radius: 99px; background: var(--grad); animation: corre 1.4s ease-in-out infinite; }
+  .status-topo { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+  .rotulo { display: inline-flex; align-items: center; gap: 7px; font-size: .8rem; font-weight: 600; color: var(--mutado); }
+  .rotulo::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #6d7186; }
+  .rotulo[data-estado="trabalhando"], .rotulo[data-estado="fim"] { color: var(--verde-2); }
+  .rotulo[data-estado="trabalhando"]::before, .rotulo[data-estado="fim"]::before { background: var(--verde); }
+  .rotulo[data-estado="erro"] { color: var(--erro); }
+  .rotulo[data-estado="erro"]::before { background: var(--erro); }
+  .progresso { height: 6px; border-radius: 99px; background: rgba(180, 184, 210, .14); overflow: hidden; }
+  .progresso span { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--verde), var(--ciano)); transition: width .3s ease; }
+  .progresso[data-estado="trabalhando"] span { width: 38%; animation: corre 1.4s ease-in-out infinite; }
+  .progresso[data-estado="fim"] span { width: 100%; }
+  .progresso[data-estado="erro"] span { width: 100%; background: var(--erro); }
   @keyframes corre { 0% { transform: translateX(-110%); } 100% { transform: translateX(290%); } }
+  #status { margin-top: 12px; font-size: .92rem; color: #dfe1ea; min-height: 22px; }
+  #status[data-estado="erro"] { color: var(--erro); }
 
   .vazio { display: grid; gap: 6px; justify-items: center; text-align: center; padding: 26px 16px; color: var(--mutado); font-size: .9rem; }
   .vazio strong { color: var(--texto); font-size: .98rem; }
@@ -295,34 +292,73 @@ HTML = r"""
     font-size: .78rem; color: #d0d3df;
   }
 
-  /* ---------- player e lives ---------- */
+  /* ---------- player da prévia ---------- */
   .card-topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 700; }
   .ponto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--verde); margin-right: 8px; }
   .ponto.off { background: #777b8d; }
   .player { display: block; width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 10px; background: #000; }
   .player-aviso { margin: 8px 0 0; font-size: .78rem; color: var(--mutado); }
-  #lives {
-    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 80%); gap: 12px;
-    overflow-x: auto; padding: 2px 2px 12px; scroll-snap-type: x mandatory; scrollbar-width: thin;
+
+  /* ---------- lives (no topo da página) ---------- */
+  .lives-sec { margin-bottom: 20px; }
+  .lives-titulo { margin: 0 0 12px; font-size: .95rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+  .lives-layout { display: grid; gap: 12px; }
+  #lives-destaque:empty, #lives-outras:empty { display: none; }
+  #lives-outras {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(170px, 47%); gap: 12px;
+    overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x mandatory; scrollbar-width: thin;
   }
-  .live-item { min-width: 0; padding: 10px; border: 1px solid var(--borda); border-radius: 12px; background: #0f1119; scroll-snap-align: start; }
-  .live-topo { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
-  .live-nome { font-weight: 700; line-height: 1.35; }
-  .viewers { display: block; margin-top: 2px; font-weight: 500; font-size: .8rem; color: var(--mutado); }
-  .live-topo .btn-mini { width: 100%; }
-  .placeholder {
-    width: 100%; aspect-ratio: 16/9; border-radius: 10px; background: #000; color: var(--texto);
-    border: 1px solid var(--borda); display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 8px; cursor: pointer;
+  .live-card {
+    min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 6px;
+    border: 1.5px solid rgba(88, 232, 121, .55); border-radius: 14px; background: #0e1017; scroll-snap-align: start;
   }
-  .placeholder:hover { border-color: var(--verde-2); }
-  .placeholder .play {
-    width: 42px; height: 42px; border-radius: 50%; background: var(--verde); color: #0b0c12;
-    display: grid; place-items: center; font-size: 1rem; padding-left: 3px;
+  .live-card.destaque {
+    padding: 8px; border-width: 2px; border-color: var(--verde);
+    background: linear-gradient(160deg, #121c18, #0e1017);
+    box-shadow: 0 0 0 1px rgba(88, 232, 121, .22), 0 0 32px rgba(88, 232, 121, .16);
   }
-  .placeholder small { color: var(--mutado); font-size: .78rem; }
+  .live-card.offline { border-color: var(--borda); opacity: .85; }
+  .live-media { position: relative; aspect-ratio: 16/9; border-radius: 9px; overflow: hidden; background: #000; }
+  .live-media .player { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
+  .live-thumb { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(135deg, #1b2430, #12131b); }
+  .live-letra { font-size: 2rem; font-weight: 800; color: rgba(255, 255, 255, .3); }
+  .live-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .2s ease; }
+  .play-over {
+    position: absolute; inset: 0; border: 0; cursor: pointer; display: grid; place-items: center;
+    background: linear-gradient(to top, rgba(0, 0, 0, .55), transparent 55%); color: #0b0c12;
+  }
+  .play-over span { width: 44px; height: 44px; border-radius: 50%; background: rgba(88, 232, 121, .95); display: grid; place-items: center; padding-left: 3px; transition: transform .15s ease; }
+  .play-over:hover span { transform: scale(1.08); }
+  .live-card:not(.destaque) .play-over span { width: 36px; height: 36px; font-size: .85rem; }
+  .destaque .play-over span { width: 62px; height: 62px; font-size: 1.3rem; }
+  .badge-live { position: absolute; top: 8px; left: 8px; z-index: 1; background: #e5253d; color: #fff; font-size: .68rem; font-weight: 800; letter-spacing: .04em; padding: 3px 7px; border-radius: 5px; pointer-events: none; }
+  .chip-viewers { position: absolute; left: 8px; bottom: 8px; z-index: 1; background: rgba(0, 0, 0, .68); color: #fff; font-size: .74rem; font-weight: 600; padding: 3px 9px; border-radius: 99px; pointer-events: none; }
+  .live-info { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 0 2px; }
+  .avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: #232637; display: grid; place-items: center; font-weight: 800; font-size: .9rem; color: #cfd2de; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .live-textos { flex: 1; min-width: 0; }
+  .live-nome { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: .92rem; }
+  .live-nome b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .live-titulo { font-size: .78rem; color: var(--mutado); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 1.1em; }
+  .tag-destaque { display: none; flex: none; background: rgba(88, 232, 121, .16); color: var(--verde-2); font-size: .66rem; font-weight: 700; padding: 2px 7px; border-radius: 99px; }
+  .destaque .tag-destaque { display: inline-block; }
+  .destaque .live-nome { font-size: 1.08rem; }
+  .destaque .avatar { width: 42px; height: 42px; }
+  .viewers-info { display: none; flex: none; font-size: .78rem; color: var(--mutado); }
+  .tocando .viewers-info { display: inline; }
+  .btn-live {
+    width: 100%; min-height: 40px; background: transparent; color: var(--verde); cursor: pointer;
+    border: 1.5px solid var(--verde); border-radius: 10px; font-weight: 700; font-size: .86rem;
+    transition: background .15s ease;
+  }
+  .btn-live:hover { background: rgba(88, 232, 121, .12); }
+  .btn-live.off { border-color: var(--borda-forte); color: var(--mutado); }
   @media (min-width: 700px) {
-    #lives { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); overflow: visible; scroll-snap-type: none; }
+    #lives-outras { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); overflow: visible; scroll-snap-type: none; }
+  }
+  @media (min-width: 900px) {
+    .lives-layout:not(.sem-destaque) { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; }
+    .lives-layout:not(.sem-destaque) #lives-outras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   /* ---------- clipes ---------- */
@@ -372,7 +408,7 @@ HTML = r"""
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     *, *::before, *::after { transition: none !important; }
-    .progresso span { animation: none; width: 100%; opacity: .5; }
+    .progresso[data-estado="trabalhando"] span { animation: none; width: 100%; opacity: .5; }
   }
 </style>
 </head>
@@ -380,23 +416,25 @@ HTML = r"""
   <header class="topbar">
     <div class="topbar-inner">
       <a class="brand" href="/" aria-label="Clipador de lives, página inicial">
-        <span class="logo-box" aria-hidden="true">
-          <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M15 20H35L55 50L35 80H15L35 50L15 20Z" fill="#58e879"/>
-            <path d="M45 20H65L85 50L65 80H45L65 50L45 20Z" fill="#58e879" opacity="0.65"/>
-          </svg>
-        </span>
-        <span class="brand-nome">Clipador de lives<span class="brand-sub">para a Kick</span></span>
+        <span class="brand-nome">Clipador<span class="brand-sub">de lives</span></span>
       </a>
     </div>
   </header>
 
   <main class="wrap">
+    <section class="lives-sec" aria-labelledby="lives-titulo">
+      <h2 class="lives-titulo" id="lives-titulo">Lives agora na Kick</h2>
+      <div class="lives-layout" id="lives-layout">
+        <div id="lives-destaque"></div>
+        <div id="lives-outras"></div>
+      </div>
+    </section>
+
     <div class="layout">
       <div class="col col-form">
         <section class="hero-card">
           <h1 class="hero-titulo">Transforme lives em clipes de 1 minuto</h1>
-          <p class="hero-sub">Cole o link da Kick e corte uma live <strong>ao vivo</strong> ou uma <strong>live antiga</strong> (com os melhores momentos). Baixe os cortes prontos em MP4 ou ZIP.</p>
+          <p class="hero-sub">Corte trechos marcantes de transmissões da <strong>Kick</strong> de forma fácil e rápida. Funciona com lives ao vivo e com lives antigas (melhores momentos).</p>
 
           <div class="campo">
             <label for="url">Link da live</label>
@@ -423,27 +461,6 @@ HTML = r"""
             </select>
           </div>
 
-          <div class="campo">
-            <label for="seg">Duração de cada clipe</label>
-            <select id="seg">
-              <option value="60" selected>1 minuto</option>
-              <option value="30">30 segundos</option>
-            </select>
-          </div>
-
-          <div class="campo">
-            <label for="formato">Formato do vídeo</label>
-            <div class="fmt-linha">
-              <select id="formato">
-                <option value="original" selected>Original (horizontal, mais rápido)</option>
-                <option value="vertical_blur">Vertical 9:16 com fundo desfocado</option>
-                <option value="vertical_crop">Vertical 9:16 com recorte central</option>
-              </select>
-              <div class="fmt-cel" id="fmt-cel" data-fmt="original" aria-hidden="true"><div class="fmt-prev"><i></i></div></div>
-            </div>
-            <p class="dica">Vertical reencoda o vídeo: na live ao vivo o servidor grava primeiro e converte clipe por clipe depois, então demora mais. No formato original o corte é feito no keyframe mais próximo, então o início pode variar alguns segundos.</p>
-          </div>
-
           <div class="campo oculto" id="grupo-qtd">
             <label for="qtd">Quantos clipes dos melhores momentos</label>
             <select id="qtd">
@@ -456,6 +473,28 @@ HTML = r"""
             <!--TESTE-->
           </div>
 
+          <div class="linha-2">
+            <div class="campo">
+              <label for="seg">Duração de cada clipe</label>
+              <select id="seg">
+                <option value="60" selected>60 segundos</option>
+                <option value="30">30 segundos</option>
+              </select>
+            </div>
+            <div class="campo">
+              <label for="formato">Formato do vídeo</label>
+              <select id="formato">
+                <option value="original" selected>Horizontal</option>
+                <option value="vertical_blur">Vertical (desfocado)</option>
+                <option value="vertical_crop">Vertical (recorte)</option>
+              </select>
+            </div>
+          </div>
+          <div class="campo fmt-linha">
+            <div class="fmt-cel" id="fmt-cel" data-fmt="original" aria-hidden="true"><div class="fmt-prev"><i></i></div></div>
+            <p class="dica">Horizontal é o mais rápido, mas o início do corte pode variar alguns segundos. Vertical 9:16 reencoda o vídeo e demora mais (na live ao vivo, o servidor grava primeiro e converte depois): desfocado preenche as laterais, recorte corta o centro.</p>
+          </div>
+
           <button id="btn-gravar" type="button" class="btn-principal">Cortar meu vídeo</button>
         </section>
 
@@ -464,15 +503,16 @@ HTML = r"""
             <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
             <span id="plat-status">AO VIVO</span>
           </div>
-          <iframe id="player" class="player" title="Prévia da live" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <iframe id="player" class="player" title="Prévia da live" allow="autoplay; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
           <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
         </section>
       </div>
 
       <div class="col col-res">
         <div class="caixa">
+          <div class="status-topo"><span class="rotulo" id="status-rotulo" data-estado="ocioso">Aguardando</span></div>
+          <div class="progresso" id="progresso" data-estado="ocioso" role="progressbar" aria-label="Andamento"><span></span></div>
           <div id="status" role="status" aria-live="polite" data-estado="ocioso">Cole um link da Kick para começar.</div>
-          <div class="progresso oculto" id="progresso" role="progressbar" aria-label="Processando" aria-busy="true"><span></span></div>
         </div>
 
         <div class="caixa vazio" id="vazio">
@@ -503,11 +543,6 @@ HTML = r"""
         </details>
       </div>
     </div>
-
-    <section class="caixa lives-box" id="lives-box" aria-label="Lives agora na Kick">
-      <span class="titulo-caixa">Lives agora na Kick</span>
-      <div id="lives"></div>
-    </section>
 
     <p class="aviso">Use apenas com autorização do streamer ou nas suas próprias lives.</p>
     <p class="rodape"><button type="button" class="link" id="abrir-termos">Termos de uso</button></p>
@@ -540,8 +575,6 @@ const RE_SLUG = /^[A-Za-z0-9_-]{1,40}$/;
 
 let job = null;
 let timerChecar = null;
-let assinaturaLives = '';
-const tocando = new Set();
 const estadoCanal = {};   // canal -> 'online' | 'offline' | 'incerto'
 
 // ---------- utilidades ----------
@@ -561,14 +594,16 @@ function toast(msg) {
   timerToast = setTimeout(function () { t.classList.remove('on'); }, 3200);
 }
 
+const ROTULOS = {ocioso: 'Aguardando', trabalhando: 'Em andamento', fim: 'Concluído', erro: 'Erro'};
 function definirStatus(msg, estado) {
+  estado = ROTULOS[estado] ? estado : 'ocioso';
   const s = $('status');
   s.textContent = msg || '';
-  s.dataset.estado = estado || 'ocioso';
-}
-
-function progresso(ligado) {
-  $('progresso').style.display = ligado ? 'block' : 'none';
+  s.dataset.estado = estado;
+  $('progresso').dataset.estado = estado;
+  const r = $('status-rotulo');
+  r.dataset.estado = estado;
+  r.textContent = ROTULOS[estado];
 }
 
 function msgHttp(codigo) {
@@ -674,79 +709,166 @@ function criarPlayer(c) {
   f.className = 'player';
   f.title = 'Live de ' + c.nome;
   f.allow = 'autoplay; fullscreen';
-  f.allowFullscreen = true;
   f.referrerPolicy = 'strict-origin-when-cross-origin';
   f.src = embedDe(c);
   return f;
 }
 
-function canalPorSlug(slug) {
-  return CANAIS.find(function (x) { return x.canal === slug; });
-}
-
 function clipar(slug) {
-  const c = canalPorSlug(slug);
+  const c = CANAIS.find(function (x) { return x.canal === slug; });
   if (!c) { return; }
   $('url').value = linkDe(c);
   mostrarPreview();
-  window.scrollTo({top: 0, behavior: 'smooth'});
+  document.querySelector('.hero-card').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
-function tocar(slug) {
-  const c = canalPorSlug(slug);
-  const slot = $('slot-' + slug);
-  if (!c || !slot) { return; }
-  tocando.add(slug);
-  slot.replaceChildren(criarPlayer(c));
+function fmtViewers(n) {
+  if (n >= 1000) {
+    return (Math.round(n / 100) / 10).toLocaleString('pt-BR', {maximumFractionDigits: 1}) + ' mil';
+  }
+  return Number(n).toLocaleString('pt-BR');
+}
+
+const cards = {};   // canal -> estado do cartão (o elemento é reaproveitado, para o player não recarregar a cada 30 s)
+
+function inicial(nome) { return String(nome || '?').charAt(0).toUpperCase(); }
+
+function criarCard(c) {
+  const k = {c: c, d: null, offline: null, player: null, manual: false, thumbImg: null, chipV: null, avatarUrl: ''};
+  k.root = el('article', 'live-card');
+  k.media = el('div', 'live-media');
+
+  const info = el('div', 'live-info');
+  k.avatar = el('span', 'avatar', inicial(c.nome));
+  const textos = el('div', 'live-textos');
+  const nome = el('div', 'live-nome');
+  nome.appendChild(el('b', '', c.nome));
+  nome.appendChild(el('span', 'tag-destaque', 'Maior público'));
+  k.titulo = el('div', 'live-titulo');
+  textos.appendChild(nome);
+  textos.appendChild(k.titulo);
+  k.viewersInfo = el('span', 'viewers-info');
+  info.appendChild(k.avatar);
+  info.appendChild(textos);
+  info.appendChild(k.viewersInfo);
+
+  k.btn = el('button', 'btn-live');
+  k.btn.type = 'button';
+  k.btn.addEventListener('click', function () { clipar(k.c.canal); });
+
+  k.root.appendChild(k.media);
+  k.root.appendChild(info);
+  k.root.appendChild(k.btn);
+  return k;
+}
+
+function montarMedia(k) {
+  k.media.replaceChildren();
+  k.player = null;
+  k.thumbImg = null;
+  k.chipV = null;
+  k.root.classList.remove('tocando');
+  const thumb = el('div', 'live-thumb');
+  thumb.appendChild(el('span', 'live-letra', inicial(k.c.nome)));
+  if (k.offline) {
+    thumb.appendChild(el('span', 'chip-viewers', 'Offline'));
+  } else {
+    const img = document.createElement('img');
+    img.className = 'live-img';
+    img.alt = '';
+    img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    img.style.opacity = '0';
+    img.addEventListener('load', function () { img.style.opacity = ''; });
+    img.addEventListener('error', function () { img.style.opacity = '0'; });
+    k.thumbImg = img;
+    thumb.appendChild(img);
+    thumb.appendChild(el('span', 'badge-live', 'LIVE'));
+    k.chipV = el('span', 'chip-viewers');
+    thumb.appendChild(k.chipV);
+    const play = el('button', 'play-over');
+    play.type = 'button';
+    play.setAttribute('aria-label', 'Assistir à live de ' + k.c.nome);
+    play.appendChild(el('span', '', '▶'));
+    play.addEventListener('click', function () { iniciarPlayer(k, true); });
+    thumb.appendChild(play);
+  }
+  k.media.appendChild(thumb);
+}
+
+function aplicarDados(k, d) {
+  k.d = d;
+  k.titulo.textContent = d.offline ? 'Offline' : (d.titulo || 'Ao vivo agora');
+  const v = (d.viewers !== null && d.viewers !== undefined) ? fmtViewers(d.viewers) + ' assistindo' : '';
+  k.viewersInfo.textContent = v;
+  if (k.chipV) { k.chipV.textContent = v || 'Ao vivo'; }
+  if (k.thumbImg && d.thumb && k.thumbImg.getAttribute('src') !== d.thumb) { k.thumbImg.src = d.thumb; }
+  if (d.avatar && d.avatar !== k.avatarUrl) {
+    k.avatarUrl = d.avatar;
+    const a = document.createElement('img');
+    a.alt = '';
+    a.referrerPolicy = 'no-referrer';
+    a.addEventListener('load', function () { k.avatar.replaceChildren(a); });
+    a.src = d.avatar;
+  }
+  k.btn.textContent = d.offline ? 'Usar última live' : 'Usar esta live';
+  k.btn.classList.toggle('off', !!d.offline);
+}
+
+function iniciarPlayer(k, manual) {
+  if (k.offline) { return; }
+  if (manual) { k.manual = true; }
+  if (k.player) { return; }
+  const f = criarPlayer(k.c);
+  k.media.replaceChildren(f);
+  k.player = f;
+  k.root.classList.add('tocando');
+}
+
+function pararPlayer(k) {
+  montarMedia(k);
+  if (k.d) { aplicarDados(k, k.d); }
+}
+
+function colocar(cont, nos) {
+  // só move o que está fora de ordem (mover um iframe no DOM faz ele recarregar)
+  nos.forEach(function (n, i) {
+    if (cont.children[i] !== n) { cont.insertBefore(n, cont.children[i] || null); }
+  });
+  while (cont.children.length > nos.length) { cont.removeChild(cont.lastChild); }
 }
 
 function montarLives(lista) {
-  // lista: [{canal, nome, viewers, offline}] online primeiro (maior público), offline depois
-  const assinatura = lista.map(function (c) { return c.canal + ':' + c.viewers + ':' + (c.offline ? 'off' : 'on'); }).join('|');
-  if (assinatura === assinaturaLives) { return; }
-  assinaturaLives = assinatura;
-
-  const temPublico = lista.length > 0 && lista[0].viewers !== null && !lista[0].offline;
-  const itens = [];
-  lista.forEach(function (c, pos) {
-    const item = el('div', 'live-item');
-    const topo = el('div', 'live-topo');
-    const nome = el('span', 'live-nome');
-    nome.appendChild(el('span', 'ponto' + (c.offline ? ' off' : '')));
-    nome.appendChild(document.createTextNode(c.nome));
-    const detalhe = c.offline ? 'Offline'
-      : (c.viewers !== null ? c.viewers.toLocaleString('pt-BR') + ' assistindo' : '');
-    if (detalhe) { nome.appendChild(el('span', 'viewers', detalhe)); }
-    topo.appendChild(nome);
-
-    const btn = el('button', 'btn-mini sec' + (c.offline ? ' off' : ''), c.offline ? 'Usar última live' : 'Usar esta live');
-    btn.type = 'button';
-    btn.addEventListener('click', function () { clipar(c.canal); });
-    topo.appendChild(btn);
-    item.appendChild(topo);
-
-    if (!c.offline) {
-      const slot = el('div');
-      slot.id = 'slot-' + c.canal;
-      const rodando = (temPublico && pos === 0) || tocando.has(c.canal);
-      if (rodando) {
-        slot.appendChild(criarPlayer(c));
-      } else {
-        const ph = el('button', 'placeholder');
-        ph.type = 'button';
-        ph.setAttribute('aria-label', 'Assistir à live de ' + c.nome);
-        ph.appendChild(el('span', 'play', '▶'));
-        ph.appendChild(el('small', '', 'Clique para assistir'));
-        ph.addEventListener('click', function () { tocar(c.canal); });
-        slot.appendChild(ph);
-      }
-      item.appendChild(slot);
+  // lista: [{canal, nome, viewers, offline, titulo, thumb, avatar}] online primeiro (maior público), offline depois
+  const temPublico = lista.length > 0 && !lista[0].offline && lista[0].viewers !== null && lista[0].viewers !== undefined;
+  const destaque = [];
+  const outras = [];
+  const vistos = {};
+  lista.forEach(function (d, pos) {
+    vistos[d.canal] = true;
+    let k = cards[d.canal];
+    if (!k) { k = cards[d.canal] = criarCard({canal: d.canal, nome: d.nome}); }
+    const off = !!d.offline;
+    if (k.offline !== off) {
+      k.offline = off;
+      k.root.classList.toggle('offline', off);
+      montarMedia(k);
     }
-    itens.push(item);
+    const ehDestaque = temPublico && pos === 0;
+    k.root.classList.toggle('destaque', ehDestaque);
+    aplicarDados(k, d);
+    if (ehDestaque && !k.player) { iniciarPlayer(k, false); }          // a mais assistida já abre tocando
+    if (!ehDestaque && k.player && !k.manual) { pararPlayer(k); }      // perdeu o 1º lugar: volta pra miniatura
+    (ehDestaque ? destaque : outras).push(k.root);
   });
-  $('lives').replaceChildren.apply($('lives'), itens);
+  Object.keys(cards).forEach(function (canal) { if (!vistos[canal]) { delete cards[canal]; } });
+  colocar($('lives-destaque'), destaque);
+  colocar($('lives-outras'), outras);
+  $('lives-layout').classList.toggle('sem-destaque', destaque.length === 0);
 }
-montarLives(CANAIS.map(function (c) { return {canal: c.canal, nome: c.nome, viewers: null, offline: false}; }));
+montarLives(CANAIS.map(function (c) {
+  return {canal: c.canal, nome: c.nome, viewers: null, offline: false, titulo: '', thumb: '', avatar: ''};
+}));
 
 async function filtrarOnline() {
   if (document.hidden) { return; }
@@ -761,7 +883,8 @@ async function filtrarOnline() {
   if (online.length > 0 || offline.length > 0) {
     online.sort(function (a, b) { return (b.viewers || 0) - (a.viewers || 0); });
     montarLives(online.concat(offline).map(function (x) {
-      return {canal: x.canal, nome: x.nome, viewers: x.viewers, offline: x.status === 'offline'};
+      return {canal: x.canal, nome: x.nome, viewers: x.viewers, offline: x.status === 'offline',
+              titulo: x.titulo || '', thumb: x.thumb || '', avatar: x.avatar || ''};
     }));
   }
 }
@@ -819,7 +942,6 @@ async function iniciar() {
   clearTimeout(timerChecar);
   resetarResultados();
   definirStatus('Iniciando...', 'trabalhando');
-  progresso(true);
 
   const vod = $('modo').value === 'vod';
   const base = {url: url, seg: $('seg').value, formato: $('formato').value};
@@ -827,7 +949,6 @@ async function iniciar() {
   const res = await postar(vod ? '/iniciar_vod' : '/iniciar', corpo);
   if (!res.ok || !res.data.id) {
     definirStatus(res.data.erro || 'Link inválido.', 'erro');
-    progresso(false);
     btn.disabled = false;
     return;
   }
@@ -973,7 +1094,6 @@ async function checar() {
   const d = res.data;
   const terminou = d.estado === 'fim' || d.estado === 'erro';
   definirStatus(d.msg || '', terminou ? d.estado : 'trabalhando');
-  progresso(!terminou);
   $('diag').textContent = d.diag || '-';
   atualizarListaClipes(Number(d.clipes || 0), meuJob, d.info || []);
 
@@ -1006,7 +1126,6 @@ async function maisClipes() {
   $('mais').style.display = 'none';
   $('btn-gravar').disabled = true;
   definirStatus('Cortando mais clipes...', 'trabalhando');
-  progresso(true);
   clearTimeout(timerChecar);
   checar();
 }
@@ -1042,7 +1161,7 @@ VAGAS = threading.BoundedSemaphore(MAX_SIMULTANEOS)
 
 
 # CSP da página: scripts e estilos só com o nonce desta resposta; único site externo permitido é o player da Kick.
-CSP_PAGINA = ("default-src 'self'; script-src 'nonce-{n}'; style-src 'nonce-{n}'; img-src 'self' data:; "
+CSP_PAGINA = ("default-src 'self'; script-src 'nonce-{n}'; style-src 'nonce-{n}'; img-src 'self' data: https://*.kick.com; "
               "media-src 'self'; connect-src 'self'; frame-src https://player.kick.com; "
               "object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
@@ -1973,9 +2092,30 @@ _LIVES_CACHE = {"ate": 0.0, "dados": None}
 _LIVES_LOCK = threading.Lock()
 
 
+def _url_imagem_kick(valor):
+    """Só deixa passar imagens https de kick.com ou subdomínios (a CSP da página também só libera isso)."""
+    if isinstance(valor, dict):
+        valor = valor.get("src") or valor.get("url") or ""
+    if not isinstance(valor, str) or len(valor) > 500:
+        return ""
+    valor = valor.strip()
+    try:
+        u = urlparse(valor)
+        host = (u.hostname or "").lower()
+    except ValueError:
+        return ""
+    if u.scheme != "https" or not (host == "kick.com" or host.endswith(".kick.com")):
+        return ""
+    return valor
+
+
 def _consultar_canal(c):
-    item = {"canal": c["canal"], "nome": c["nome"], "status": "incerto", "viewers": None}
+    item = {"canal": c["canal"], "nome": c["nome"], "status": "incerto", "viewers": None,
+            "titulo": "", "thumb": "", "avatar": ""}
     d, _ = kick_get_json("https://kick.com/api/v2/channels/%s" % quote(c["canal"]), timeout=10)
+    if isinstance(d, dict):
+        user = d.get("user") if isinstance(d.get("user"), dict) else {}
+        item["avatar"] = _url_imagem_kick(user.get("profile_pic") or d.get("profile_pic") or d.get("profilePic"))
     if isinstance(d, dict) and "livestream" in d:
         ls = d["livestream"]
         if not ls:
@@ -1986,6 +2126,8 @@ def _consultar_canal(c):
                 v = ls.get("viewers")
             item["status"] = "online"
             item["viewers"] = v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+            item["titulo"] = str(ls.get("session_title") or "")[:120]
+            item["thumb"] = _url_imagem_kick(ls.get("thumbnail"))
     return item
 
 
