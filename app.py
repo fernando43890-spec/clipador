@@ -279,6 +279,106 @@ HTML = r"""
   .mais-box select { flex: 1; }
   .mais-box button { white-space: nowrap; }
   button:focus-visible, a:focus-visible { outline: 2px solid var(--tt-azul); outline-offset: 2px; }
+
+
+  /* ===== Redesign mobile: inspirado na referência enviada ===== */
+  :root {
+    --bg: #08090e;
+    --surface: #14141d;
+    --surface-2: #1b1b27;
+    --input: #171923;
+    --borda: rgba(180, 184, 210, .20);
+    --borda-forte: rgba(180, 184, 210, .30);
+    --kick-verde: #58e879;
+    --kick-brilho: #76f59a;
+    --texto: #f7f7fb;
+    --mutado: #aaaebe;
+    --tt-rosa: #ff3264;
+    --tt-azul: #29dce8;
+    --grad: linear-gradient(110deg, #27dfe5 0%, #34d9ca 45%, #ff3264 100%);
+  }
+  body {
+    background:
+      radial-gradient(ellipse at 10% 0%, rgba(44, 225, 151, .09), transparent 42%),
+      radial-gradient(ellipse at 95% 12%, rgba(255, 50, 100, .08), transparent 40%),
+      #08090e;
+  }
+  .topbar { background: rgba(8,9,14,.92); border: 0; }
+  .topbar-inner { max-width: 560px; padding: 20px 18px 10px; }
+  .brand { font-size: 1.55rem; letter-spacing: -.045em; line-height: 1.05; }
+  .logo-box { display:none; }
+  .brand span:last-child::after {
+    content: ' • de lives'; display: block; color: var(--kick-verde);
+    font-size: .88rem; letter-spacing: 0; margin-top: 3px;
+  }
+  .wrap { max-width: 560px; padding: 18px 16px 30px; }
+  .hero-card {
+    display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+    column-gap: 12px; row-gap: 0; padding: 22px 18px;
+    border: 1px solid rgba(190,190,220,.25); border-radius: 17px;
+    background: linear-gradient(145deg, rgba(26,26,38,.98), rgba(17,17,26,.98));
+    box-shadow: 0 18px 48px rgba(0,0,0,.34);
+  }
+  .hero-titulo, .hero-sub, .hero-card > .campo:nth-of-type(1),
+  .hero-card > .campo:nth-of-type(2), .hero-card > .campo:nth-of-type(5),
+  .hero-card > .campo:nth-of-type(6), .hero-card > .btn-principal { grid-column: 1 / -1; }
+  .hero-titulo { font-size: clamp(1.7rem, 7vw, 2.2rem); line-height: 1.12; }
+  .hero-sub { color: #d1d2dc; font-size: .98rem; margin: 10px 0 18px; }
+  .campo { min-width: 0; margin-bottom: 13px; }
+  label { color: #f0f0f5; font-size: .88rem; margin-bottom: 8px; }
+  input, select {
+    border-radius: 11px; min-height: 50px; background-color: #151923;
+    border-color: rgba(118,245,154,.55); font-size: .95rem;
+  }
+  #formato { border-color: rgba(41,220,232,.7); }
+  .btn-principal {
+    min-height: 56px; margin-top: 3px; border-radius: 12px;
+    font-size: 1.02rem; box-shadow: 0 9px 24px rgba(255,50,100,.14);
+  }
+  .caixa, .card-live {
+    background: rgba(22,22,32,.96); border: 1px solid rgba(180,184,210,.22);
+    border-radius: 14px; padding: 15px 16px; margin-top: 14px;
+  }
+  #status { position: relative; padding-left: 38px; min-height: 54px; }
+  #status::before {
+    content: ''; position: absolute; left: 16px; top: 19px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--kick-verde); box-shadow: 0 0 12px rgba(88,232,121,.6);
+  }
+  .diag-topo { color: #f0f0f5; font-size: .84rem; }
+  pre { color: #d0d3df; }
+  #lives-box { overflow: hidden; }
+  #lives-box > .diag-topo { display:block; font-size: 1rem; margin-bottom: 12px; }
+  #lives {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 78%);
+    grid-template-rows: auto; gap: 12px; overflow-x: auto; padding: 2px 2px 12px;
+    scroll-snap-type: x mandatory; scrollbar-width: thin;
+  }
+  .live-item {
+    min-width: 0; margin: 0; padding: 8px; border: 1px solid rgba(88,232,121,.42);
+    border-radius: 13px; background: #10131a; scroll-snap-align: start;
+  }
+  .live-topo { display:flex; flex-direction:column; align-items:stretch; gap:8px; margin: 0 0 8px; }
+  .live-topo > span { line-height: 1.35; }
+  .live-topo .btn-mini { width:100%; min-height: 38px; background: transparent; color: var(--kick-verde); border:1px solid var(--kick-verde); }
+  .placeholder, .player { border-radius: 9px; border: 1px solid rgba(88,232,121,.75); }
+  .placeholder { aspect-ratio: 16/9; }
+  .placeholder .play { width:42px; height:42px; font-size:1.1rem; }
+  .viewers { display:block; margin:4px 0 0; }
+  .ponto { width:9px; height:9px; background:var(--kick-verde); box-shadow:0 0 9px rgba(88,232,121,.6); }
+  .ponto.off { background:#777; box-shadow:none; }
+  .clipe-item { background:#171923; border-color:rgba(180,184,210,.2); }
+  .zip-link { background:rgba(88,232,121,.12); border-color:var(--kick-verde); color:var(--kick-brilho); }
+  .aviso { color:#9298a9; }
+  @media (max-width: 390px) {
+    .hero-card { padding:19px 14px; column-gap:9px; }
+    .hero-titulo { font-size:1.65rem; }
+    input, select { padding:12px 10px; font-size:.88rem; }
+    #lives { grid-auto-columns: 86%; }
+  }
+  @media (min-width: 700px) {
+    .wrap, .topbar-inner { max-width: 680px; }
+    #lives { grid-auto-columns: 245px; }
+  }
 </style>
 </head>
 <body>
