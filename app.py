@@ -87,6 +87,18 @@ CANAIS = [
     {"nome": "Brabox", "canal": "brabox"},
     {"nome": "Gabe Peixe", "canal": "gabepeixe"},
     {"nome": "Coringa", "canal": "coringa"},
+    {"nome": "Super Xandão", "canal": "superxandao"},
+    {"nome": "Mitsuke", "canal": "mitsuke"},
+    {"nome": "BRKK", "canal": "brkk"},
+    {"nome": "NaraFPS", "canal": "narafps"},
+    {"nome": "ThiagoSemT", "canal": "thiagosemt"},
+    {"nome": "Renato Garcia", "canal": "renatogarcia"},
+    {"nome": "Yoda", "canal": "yoda"},
+    {"nome": "Yuri22", "canal": "yuri22"},
+    {"nome": "Dona", "canal": "dona"},
+    {"nome": "JonVlogs", "canal": "jonvlogs"},
+    {"nome": "BahiaQZ", "canal": "bahiaqz"},
+    {"nome": "Gaules", "canal": "gaules"},
 ]
 
 # vídeo vertical: 720x1280 por padrão (leve). Se o servidor tiver folga de memória, CLIPADOR_VERTICAL_ALTURA=1920 usa 1080x1920.
@@ -167,21 +179,23 @@ HTML = r"""
 
   /* ---------- topo ---------- */
   .topbar { padding-top: env(safe-area-inset-top); }
-  .topbar-inner { max-width: 560px; margin: 0 auto; padding: 22px 16px 4px; }
+  .topbar-inner { width: 100%; max-width: none; margin: 0 auto; padding: 22px 16px 4px; }
   .brand { display: inline-block; color: var(--texto); text-decoration: none; }
   .brand-nome { display: block; font-weight: 800; font-size: 1.6rem; letter-spacing: -.04em; line-height: 1; }
   .brand-sub { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: 1.05rem; font-weight: 700; color: var(--verde); letter-spacing: -.01em; }
   .brand-sub::before { content: ''; width: 22px; height: 3px; border-radius: 2px; background: var(--verde); }
 
   /* ---------- estrutura ---------- */
-  .wrap { max-width: 560px; margin: 0 auto; padding: 16px 16px calc(36px + env(safe-area-inset-bottom)); }
-  .layout { display: grid; gap: 14px; }
+  .wrap { width: 100%; max-width: none; margin: 0 auto; padding: 16px 16px calc(36px + env(safe-area-inset-bottom)); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
   .col { display: grid; gap: 14px; align-content: start; min-width: 0; }
   @media (min-width: 900px) {
-    .topbar-inner, .wrap { max-width: 1080px; }
-    .topbar-inner { padding: 14px 24px; }
-    .wrap { padding: 24px 24px 44px; }
-    .layout { grid-template-columns: minmax(0, 470px) minmax(0, 1fr); gap: 22px; align-items: start; }
+    .topbar-inner { padding: 14px 28px; }
+    .wrap { padding: 24px 28px 44px; }
+    .layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+  }
+  @media (max-width: 899px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
   }
 
   /* ---------- cartões ---------- */
@@ -305,8 +319,8 @@ HTML = r"""
   .lives-layout { display: grid; gap: 12px; }
   #lives-destaque:empty, #lives-outras:empty { display: none; }
   #lives-outras {
-    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(170px, 47%); gap: 12px;
-    overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x mandatory; scrollbar-width: thin;
+    display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; gap: 12px;
+    min-width: 0; overflow: visible; padding: 2px 2px 10px; scroll-snap-type: none;
   }
   .live-card {
     min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 6px;
@@ -353,12 +367,12 @@ HTML = r"""
   }
   .btn-live:hover { background: rgba(88, 232, 121, .12); }
   .btn-live.off { border-color: var(--borda-forte); color: var(--mutado); }
+  /* Todas as lives ficam em uma coluna; a mais assistida continua em destaque no topo. */
+  #lives-destaque, #lives-outras { width: 100%; min-width: 0; }
+  .lives-layout:not(.sem-destaque) { grid-template-columns: minmax(0, 1fr); }
+  #lives-outras { grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 700px) {
-    #lives-outras { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); overflow: visible; scroll-snap-type: none; }
-  }
-  @media (min-width: 900px) {
-    .lives-layout:not(.sem-destaque) { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; }
-    .lives-layout:not(.sem-destaque) #lives-outras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #lives-outras { grid-template-columns: minmax(0, 1fr); }
   }
 
   /* ---------- clipes ---------- */
