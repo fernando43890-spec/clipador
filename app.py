@@ -8,7 +8,7 @@ Produção (use 1 worker: os jobs ficam em memória, então vários workers não
     gunicorn app:app --workers 1 --threads 8 --timeout 120
 
 Arquivo único: o HTML da página está embutido na variável HTML.
-Precisa do ffmpeg instalado no sistema. Variáveis de ambiente opcionais: veja o LEIAME.md.
+Precisa do ffmpeg (com ffprobe) instalado no sistema. Variáveis de ambiente opcionais: veja o LEIAME.md.
 """
 import json
 import logging
@@ -74,6 +74,9 @@ CANAIS = [
     {"nome": "Gabe Peixe", "canal": "gabepeixe"},
     {"nome": "Coringa", "canal": "coringa"},
 ]
+
+# vídeo vertical: 1080x1920 por padrão. Se o servidor for fraco, use CLIPADOR_VERTICAL_ALTURA=1280 (720x1280).
+VERT_H, VERT_W = (1920, 1080) if _env_int("CLIPADOR_VERTICAL_ALTURA", 1920) >= 1600 else (1280, 720)
 
 UA_NAV = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
           "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -337,7 +340,7 @@ HTML = r"""
           <option value="vertical_blur">Vertical 9:16 com fundo desfocado</option>
           <option value="vertical_crop">Vertical 9:16 com recorte central</option>
         </select>
-        <p class="player-aviso">Vertical reencoda o vídeo, então demora mais pra ficar pronto. No formato original o corte é feito no keyframe mais próximo, então o início pode variar alguns segundos.</p>
+        <p class="player-aviso">Vertical reencoda o vídeo: na live ao vivo o servidor grava primeiro e converte clipe por clipe depois, então demora mais pra ficar pronto. No formato original o corte é feito no keyframe mais próximo, então o início pode variar alguns segundos.</p>
       </div>
 
       <div class="campo" id="grupo-qtd" style="display:none">
@@ -810,20 +813,58 @@ def ler_fim(caminho, limite=700):
         return ""
 
 
-def listar_clipes(pasta):
+def listar_clipes(pasta, prefixo="clipe_"):
     if not pasta or not os.path.isdir(pasta):
         return []
     arquivos = []
     for f in sorted(os.listdir(pasta)):
-        if f.startswith("clipe_") and f.endswith(".mp4"):
+        if f.startswith(prefixo) and f.endswith(".mp4"):
             caminho = os.path.join(pasta, f)
             if os.path.isfile(caminho) and os.path.getsize(caminho) > 0:
                 arquivos.append(f)
     return arquivos
 
 
-def tamanho_pasta(pasta):
-    return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta))
+def tamanho_pasta(pasta, prefixo="clipe_"):
+    return sum(os.path.getsize(os.path.join(pasta, f)) for f in listar_clipes(pasta, prefixo))
+
+
+def clipe_valido(caminho, minimo_s=1.0):
+    """False para MP4 corrompido (sem moov, sem vídeo, quase vazio)."""
+    try:
+        if os.path.getsize(caminho) < 2048:
+            return False
+    except OSError:
+        return False
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_type:format=duration", "-of", "json", caminho],
+            capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        return True  # sem ffprobe só vale o teste de tamanho
+    except subprocess.TimeoutExpired:
+        return False
+    if r.returncode != 0:
+        return False
+    try:
+        d = json.loads(r.stdout or "{}")
+        return bool(d.get("streams")) and float((d.get("format") or {}).get("duration") or 0) >= minimo_s
+    except (ValueError, TypeError):
+        return False
+
+
+def resumo_erro(texto, codigo=None, limite=400):
+    """Resume o erro do ffmpeg: código de saída + linhas que parecem erro (ou o final do log)."""
+    partes = []
+    if codigo is not None and codigo < 0:
+        partes.append("ffmpeg foi encerrado pelo sistema (sinal %d) - provável falta de memória ou CPU no servidor." % -codigo)
+    elif codigo:
+        partes.append("ffmpeg terminou com código %d." % codigo)
+    linhas = [l.strip() for l in (texto or "").replace("\r", "\n").splitlines() if l.strip()]
+    suspeitas = [l for l in linhas if re.search(r"error|invalid|fail|unable|unknown|no such|too many|timed out|denied", l, re.I)]
+    partes.append("\n".join((suspeitas or linhas)[-4:]))
+    return "\n".join(p for p in partes if p)[-limite:]
 
 
 def fmt_tempo(s):
@@ -1036,26 +1077,41 @@ def extrair_stream(url):
     return None, {}, erro_msg[-700:]
 
 
+CODEC_VERTICAL = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]
+
+
 def args_formato(formato):
+    """Argumentos de vídeo do ffmpeg. 'original' só copia; os verticais reencodam em 9:16 a 30 fps."""
+    w, h = VERT_W, VERT_H
     if formato == "vertical_blur":
+        pw, ph = w // 5, h // 5  # o fundo é desfocado em miniatura e depois ampliado: muito mais leve
         filtro = (
-            "split=2[fundo][frente];"
-            "[fundo]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,boxblur=25:5[bg];"
-            "[frente]scale=1080:-2[fg];"
-            "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1"
-        )
-        return ["-filter_complex", filtro,
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "128k"]
+            "fps=30,split=2[fundo][frente];"
+            "[fundo]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=4:1,"
+            "scale=%d:%d:flags=bilinear[bg];"
+            "[frente]scale=%d:-2[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p"
+        ) % (pw, ph, pw, ph, w, h, w)
+        return ["-filter_complex", filtro, *CODEC_VERTICAL]
     if formato == "vertical_crop":
-        filtro = "crop=ih*9/16:ih,scale=1080:1920,setsar=1"
-        return ["-vf", filtro,
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "128k"]
+        filtro = "fps=30,crop=ih*9/16:ih,scale=%d:%d,setsar=1,format=yuv420p" % (w, h)
+        return ["-vf", filtro, *CODEC_VERTICAL]
     return ["-c", "copy"]
+
+
+def converter_vertical(entrada, saida, formato):
+    """Converte um trecho já gravado para vertical (fora do tempo real, então não depende da velocidade do servidor)."""
+    cmd = ["ffmpeg", "-nostdin", "-y", "-i", entrada, *args_formato(formato), saida]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        _remover_arquivo(saida)
+        return False, "demorou demais (mais de 15 min)"
+    if r.returncode == 0 and clipe_valido(saida):
+        return True, ""
+    _remover_arquivo(saida)
+    return False, resumo_erro(r.stderr, r.returncode) or "o arquivo convertido saiu corrompido"
 
 
 # sem "file": o ffmpeg só precisa de rede aqui (um m3u8 malicioso não consegue ler arquivos do servidor)
@@ -1070,12 +1126,16 @@ def cabecalhos_ffmpeg(headers):
 
 
 def gravar(job_id, url, minutos, seg=SEG, formato="original"):
-    """Captura uma live ao vivo e já divide em clipes."""
+    """Captura uma live ao vivo e divide em clipes.
+    Sempre grava com -c copy (leve, aguenta tempo real em qualquer servidor). Nos formatos verticais,
+    os trechos gravados são convertidos um a um depois da captura, em vez de reencodar ao vivo."""
     pasta = os.path.join(BASE, job_id)
     os.makedirs(pasta, exist_ok=True)
     atualizar_job(job_id, pasta=pasta, estado="abrindo", msg="Abrindo a live...", diag="Rodando yt-dlp...")
 
-    padrao = os.path.join(pasta, "clipe_%03d.mp4")
+    vertical = formato != "original"
+    prefixo = "bruto_" if vertical else "clipe_"
+    padrao = os.path.join(pasta, prefixo + "%03d.mp4")
     log_ffmpeg = os.path.join(pasta, "ffmpeg.log")
 
     try:
@@ -1097,12 +1157,8 @@ def gravar(job_id, url, minutos, seg=SEG, formato="original"):
     atualizar_job(job_id, estado="gravando", msg="Gravando... 0 clipes prontos",
                   diag="yt-dlp OK. Iniciando ffmpeg...")
 
-    extra_video = args_formato(formato)
-    if formato != "original":
-        extra_video += ["-force_key_frames", "expr:gte(t,n_forced*%d)" % seg]
-
     cmd = [
-        "ffmpeg", "-y",
+        "ffmpeg", "-nostdin", "-y",
         "-user_agent", user_agent,
         *extra_headers,
         "-protocol_whitelist", PROTOCOLOS,
@@ -1112,7 +1168,7 @@ def gravar(job_id, url, minutos, seg=SEG, formato="original"):
         "-rw_timeout", "15000000",
         "-i", stream,
         "-t", str(int(minutos * 60)),
-        *extra_video,
+        "-c", "copy",
         "-f", "segment",
         "-segment_time", str(seg),
         "-reset_timestamps", "1",
@@ -1126,15 +1182,15 @@ def gravar(job_id, url, minutos, seg=SEG, formato="original"):
             inicio = time.time()
 
             while proc.poll() is None:
-                feitos = listar_clipes(pasta)
+                feitos = listar_clipes(pasta, prefixo)
                 # o último arquivo ainda está sendo gravado; só os anteriores estão fechados
-                clipes_prontos = max(0, len(feitos) - 1)
-                tam = tamanho_pasta(pasta)
+                fechados = max(0, len(feitos) - 1)
+                tam = tamanho_pasta(pasta, prefixo)
 
                 atualizar_job(
                     job_id,
-                    clipes=clipes_prontos,
-                    msg="Gravando... %d clipes prontos" % clipes_prontos,
+                    clipes=0 if vertical else fechados,  # no vertical os clipes só aparecem depois de convertidos
+                    msg=("Gravando... %d trechos capturados" if vertical else "Gravando... %d clipes prontos") % fechados,
                     diag="Tempo: %ds | Gravado: %d KB\n" % (time.time() - inicio, tam // 1024)
                          + ler_fim(log_ffmpeg, 500),
                 )
@@ -1151,20 +1207,47 @@ def gravar(job_id, url, minutos, seg=SEG, formato="original"):
         atualizar_job(job_id, estado="erro", msg="Erro durante a gravação com ffmpeg.", diag=str(e)[-500:])
         return
 
-    feitos_finais = listar_clipes(pasta)
-    tam_final = tamanho_pasta(pasta)
-    if feitos_finais and tam_final > 0:
-        atualizar_job(
-            job_id, estado="fim", clipes=len(feitos_finais),
-            msg="Pronto! %d clipes gerados." % len(feitos_finais),
-            diag="Total gravado: %d KB\n" % (tam_final // 1024) + ler_fim(log_ffmpeg, 400),
-        )
-    else:
+    codigo = proc.returncode
+    brutos = listar_clipes(pasta, prefixo)
+    if not brutos or tamanho_pasta(pasta, prefixo) == 0:
         atualizar_job(
             job_id, estado="erro", clipes=0,
             msg="Nenhum dado chegou em 60 segundos ou a live não está ativa.",
-            diag=ler_fim(log_ffmpeg, 800) or "Sem saída do ffmpeg.",
+            diag=resumo_erro(ler_fim(log_ffmpeg, 20000), codigo, 800) or "Sem saída do ffmpeg.",
         )
+        return
+
+    notas = []
+    if vertical:
+        convertidos = 0
+        for i, nome in enumerate(brutos):
+            atualizar_job(job_id, estado="convertendo", clipes=convertidos,
+                          msg="Convertendo para vertical... %d de %d" % (i + 1, len(brutos)),
+                          diag="\n".join(notas)[-600:])
+            entrada = os.path.join(pasta, nome)
+            saida = os.path.join(pasta, "clipe_%03d.mp4" % convertidos)
+            ok, nota = converter_vertical(entrada, saida, formato)
+            _remover_arquivo(entrada)
+            if ok:
+                convertidos += 1
+            else:
+                notas.append("Trecho %d falhou: %s" % (i + 1, nota))
+            atualizar_job(job_id, clipes=convertidos)
+        total = convertidos
+    else:
+        # se o ffmpeg foi encerrado no meio, o último arquivo fica incompleto: descarta
+        finais = listar_clipes(pasta)
+        while finais and not clipe_valido(os.path.join(pasta, finais[-1])):
+            _remover_arquivo(os.path.join(pasta, finais.pop()))
+            notas.append("Um clipe incompleto no final foi descartado.")
+        total = len(finais)
+
+    if total > 0:
+        atualizar_job(job_id, estado="fim", clipes=total, msg="Pronto! %d clipes gerados." % total,
+                      diag=("\n".join(notas) + "\n" if notas else "") + "Total gravado: %d KB" % (tamanho_pasta(pasta) // 1024))
+    else:
+        atualizar_job(job_id, estado="erro", clipes=0, msg="Nenhum clipe saiu inteiro.",
+                      diag=("\n".join(notas) + "\n" if notas else "") + resumo_erro(ler_fim(log_ffmpeg, 20000), codigo, 400))
 
 
 # ============================== LIVES ANTIGAS (VOD) ==============================
@@ -1338,7 +1421,7 @@ def cortar_clipe(job_id, idx, ini, formato):
 
     user_agent, extra = cabecalhos_ffmpeg(headers)
     saida = os.path.join(pasta, "clipe_%03d.mp4" % idx)
-    cmd = ["ffmpeg", "-y", "-user_agent", user_agent, *extra,
+    cmd = ["ffmpeg", "-nostdin", "-y", "-user_agent", user_agent, *extra,
            "-protocol_whitelist", PROTOCOLOS,
            "-rw_timeout", "20000000",
            "-ss", str(int(ini)), "-i", stream, "-t", str(tam),
@@ -1350,10 +1433,10 @@ def cortar_clipe(job_id, idx, ini, formato):
     except subprocess.TimeoutExpired:
         _remover_arquivo(saida)
         return False, "demorou demais"
-    if r.returncode == 0 and os.path.isfile(saida) and os.path.getsize(saida) > 0:
+    if r.returncode == 0 and clipe_valido(saida):
         return True, ""
     _remover_arquivo(saida)  # não deixa arquivo pela metade entrar no ZIP
-    return False, (r.stderr or "")[-120:].strip()
+    return False, resumo_erro(r.stderr, r.returncode, 250)
 
 
 def cortar_lote(job_id, lote, formato):
