@@ -16,28 +16,13 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 SEG = 60
 
-TIKTOK = [
-    {"nome": "Isaffonti", "usuario": "isaffonti"},
-    {"nome": "Fluxo Rajah", "usuario": "fluxo_rajah"},
-    {"nome": "Uriel", "usuario": "uriel.wq"},
-    {"nome": "Levelup", "usuario": "levelup_007"},
-    {"nome": "Cris Guedes", "usuario": "crisguedes_oficial"},
-    {"nome": "Isash", "usuario": "isashxwtyyy"},
-    {"nome": "Thay FPS", "usuario": "thayfps_"},
-    {"nome": "Fernanda Hanzen", "usuario": "fernandahanzen"},
-]
-TT_CACHE = {"hora": 0, "dados": [], "rodando": False}
-TT_LOCK = threading.Lock()
-TT_TTL = 60
-
-
 PAGINA = """
 <!doctype html>
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clipador de lives – Kick e TikTok</title>
+<title>Clipador de lives – Kick</title>
 <style>
   :root {
     --bg: #07060b;
@@ -415,88 +400,6 @@ PAGINA = """
   .logo-box {
     border-color: rgba(37, 244, 238, 0.4);
   }
-  #tt-box {
-    border-color: rgba(254, 44, 85, 0.35);
-  }
-  #tt-box .diag-topo {
-    color: var(--tt-azul);
-  }
-  #tt-box .btn-mini {
-    background: linear-gradient(135deg, #25f4ee, #fe2c55);
-    color: #fff;
-  }
-  #tt-box .ponto {
-    background: var(--tt-rosa);
-  }
-
-  .tt-card {
-    background: var(--surface-2);
-    border: 1px solid rgba(254, 44, 85, 0.3);
-    border-radius: 12px;
-    padding: 12px;
-  }
-  .tt-capa {
-    width: 100%;
-    aspect-ratio: 16/9;
-    border-radius: 10px;
-    background: #000 center/cover no-repeat;
-    margin-bottom: 10px;
-    position: relative;
-    overflow: hidden;
-  }
-  .tt-capa img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .tt-capa-vazia {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(37, 244, 238, 0.25), rgba(254, 44, 85, 0.35));
-    font-size: 2.6rem;
-    font-weight: 800;
-    color: #fff;
-  }
-  .tt-badge {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    background: var(--tt-rosa);
-    color: #fff;
-    font-size: .68rem;
-    font-weight: 800;
-    padding: 3px 8px;
-    border-radius: 6px;
-    letter-spacing: .04em;
-  }
-  .tt-avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    object-fit: cover;
-    vertical-align: middle;
-    margin-right: 8px;
-    border: 1px solid rgba(37, 244, 238, 0.5);
-  }
-  .tt-card .live-topo {
-    margin-bottom: 6px;
-  }
-  .tt-link {
-    color: var(--tt-azul);
-    font-size: .82rem;
-    text-decoration: none;
-    font-weight: 600;
-  }
-  .tt-vazio {
-    margin: 10px 0 0;
-    color: var(--mutado);
-    font-size: .85rem;
-  }
-
   .aviso {
     color: #7c7496;
     font-size: 0.78rem;
@@ -525,11 +428,11 @@ PAGINA = """
   <main class="wrap">
     <section class="hero-card">
       <h1 class="hero-titulo">Transforme lives ao vivo em clipes de 1 minuto</h1>
-      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick ou do TikTok, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
+      <p class="hero-sub">Cole o link da transmissão <strong>AO VIVO</strong> da Kick, escolha a duração e baixe os cortes prontos em MP4 ou ZIP.</p>
 
       <div class="campo">
         <label for="url">Link da live</label>
-        <input id="url" type="url" placeholder="Cole o link da Kick ou do TikTok...">
+        <input id="url" type="url" placeholder="Cole o link da Kick...">
       </div>
 
       <div class="campo">
@@ -566,11 +469,6 @@ PAGINA = """
       <div id="lives"></div>
     </section>
 
-    <section class="caixa" id="tt-box">
-      <span class="diag-topo">Lives agora no TikTok</span>
-      <div id="lives-tt"><p class="tt-vazio">Verificando...</p></div>
-    </section>
-
     <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
   </main>
 
@@ -586,9 +484,6 @@ function plataforma(url) {
     const partes = u.pathname.split('/').filter(Boolean);
     if ((host === 'kick.com' || host === 'kzl.ink') && partes[0]) {
       return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
-    }
-    if ((host === 'tiktok.com' || host.endsWith('.tiktok.com')) && partes[0] && partes[0].charAt(0) === '@') {
-      return {nome: 'TikTok', embed: ''};
     }
   } catch (e) {}
   return null;
@@ -608,13 +503,6 @@ function mostrarPreview() {
   document.getElementById('plat-nome').innerText = p.nome;
   const playerEl = document.getElementById('player');
   const avisoEl = document.getElementById('player-aviso');
-  if (!p.embed) {
-    playerEl.style.display = 'none';
-    playerEl.src = 'about:blank';
-    ultimoEmbed = '';
-    avisoEl.innerText = 'O TikTok não permite player aqui, mas a gravação funciona normalmente.';
-    return;
-  }
   playerEl.style.display = '';
   avisoEl.innerText = 'Se o vídeo não aparecer, a gravação ainda pode funcionar.';
   if (p.embed !== ultimoEmbed) {
@@ -720,84 +608,6 @@ async function filtrarOnline() {
 }
 filtrarOnline();
 setInterval(filtrarOnline, 30000);
-
-let assinaturaTT = '';
-
-function esconder(img) {
-  img.style.display = 'none';
-}
-
-function semImagem(img) {
-  const card = img.closest('.tt-card');
-  const nome = card ? card.querySelector('.live-topo span') : null;
-  const letra = nome ? (nome.textContent.trim().charAt(0).toUpperCase() || '?') : '?';
-  const vazio = document.createElement('div');
-  vazio.className = 'tt-capa-vazia';
-  vazio.textContent = letra;
-  img.replaceWith(vazio);
-}
-
-function esc(t) {
-  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function usarTikTok(usuario) {
-  document.getElementById('url').value = 'https://www.tiktok.com/@' + usuario + '/live';
-  mostrarPreview();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function montarTikTok(lista) {
-  const box = document.getElementById('lives-tt');
-  const visiveis = lista.filter(function (c) { return c.online !== false; });
-  const assinatura = visiveis.map(function (c) { return c.usuario + ':' + c.online + ':' + (c.capa || ''); }).join('|');
-  if (assinatura === assinaturaTT) { return; }
-  assinaturaTT = assinatura;
-  if (visiveis.length === 0) {
-    box.innerHTML = '<p class="tt-vazio">Nenhuma live do TikTok no ar agora.</p>';
-    return;
-  }
-  let h = '';
-  visiveis.forEach(function (c) {
-    const incerto = c.online === null;
-    const info = incerto ? '<span class="viewers">status incerto</span>' : '';
-    const img = c.capa || c.foto;
-    const inicial = esc((c.nome || '?').charAt(0).toUpperCase());
-    const capa = '<div class="tt-capa">' +
-      (img ? '<img src="' + esc(img) + '" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="semImagem(this)">'
-           : '<div class="tt-capa-vazia">' + inicial + '</div>') +
-      (incerto ? '' : '<span class="tt-badge">AO VIVO</span>') + '</div>';
-    const avatar = c.foto ? '<img class="tt-avatar" src="' + esc(c.foto) + '" alt="" referrerpolicy="no-referrer" onerror="esconder(this)">' : '';
-    h += '<div class="live-item"><div class="tt-card">' + capa +
-      '<div class="live-topo"><span>' + avatar + '<span class="ponto"' + (incerto ? ' style="background:#7c7496"' : '') + '></span>' + esc(c.nome) + info + '</span>' +
-      '<button class="btn-mini" data-usuario="' + c.usuario + '" onclick="usarTikTok(this.dataset.usuario)">Usar esta live</button></div>' +
-      '<a class="tt-link" href="https://www.tiktok.com/@' + c.usuario + '/live" target="_blank" rel="noopener">Abrir no TikTok ↗</a>' +
-      (incerto && c.detalhe ? '<p class="tt-vazio">Motivo: ' + esc(c.detalhe) + '</p>' : '') +
-      '</div></div>';
-  });
-  box.innerHTML = h;
-}
-
-async function carregarTikTok() {
-  let proximo = 60000;
-  try {
-    const r = await fetch('/api/tiktok');
-    if (!r.ok) {
-      proximo = 5000;
-    } else {
-      const d = await r.json();
-      if (!d.pronto) {
-        proximo = 3000;
-      } else {
-        montarTikTok(d.dados);
-      }
-    }
-  } catch (e) {
-    proximo = 5000;
-  }
-  setTimeout(carregarTikTok, proximo);
-}
-carregarTikTok();
 
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
@@ -932,172 +742,7 @@ def extrair_stream(url):
 
 
 def normalizar_url(url):
-    try:
-        u = urlparse(url)
-        host = (u.hostname or "").replace("www.", "")
-        partes = [p for p in u.path.split("/") if p]
-        if host.endswith("tiktok.com") and partes and partes[0].startswith("@"):
-            return f"https://www.tiktok.com/{partes[0]}/live"
-    except Exception:
-        pass
     return url
-
-
-TT_MIDIA = {}
-
-
-def _primeira_url(valor):
-    """Aceita string, dict com urlList/url_list ou lista; devolve a primeira URL https."""
-    if isinstance(valor, str):
-        return valor if valor.startswith("http") else ""
-    if isinstance(valor, list):
-        for v in valor:
-            r = _primeira_url(v)
-            if r:
-                return r
-        return ""
-    if isinstance(valor, dict):
-        for chave in ("urlList", "url_list", "url", "uri"):
-            if chave in valor:
-                r = _primeira_url(valor[chave])
-                if r:
-                    return r
-    return ""
-
-
-def _guardar_midia_tiktok(usuario, room, user):
-    capa = ""
-    for chave in ("coverUrl", "cover", "squareCoverImg"):
-        capa = _primeira_url(room.get(chave))
-        if capa:
-            break
-    foto = ""
-    for chave in ("avatarLarger", "avatarMedium", "avatarThumb"):
-        foto = _primeira_url(user.get(chave)) or _primeira_url(room.get(chave))
-        if foto:
-            break
-    TT_MIDIA[usuario] = {"capa": capa, "foto": foto}
-
-
-def checar_tiktok_api(usuario):
-    """Pergunta direto ao TikTok. Retorna (True/False/None, detalhe, viewers)."""
-    url = (
-        "https://www.tiktok.com/api-live/user/room?aid=1988&sourceType=54&uniqueId="
-        + quote(usuario)
-    )
-    req = Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-        "Referer": f"https://www.tiktok.com/@{usuario}/live",
-    })
-    try:
-        with urlopen(req, timeout=15) as resp:
-            corpo = resp.read().decode("utf-8", errors="ignore")
-    except Exception as e:
-        return None, "api: " + str(e)[-150:], None
-    try:
-        d = json.loads(corpo)
-    except json.JSONDecodeError:
-        return None, "api: resposta não é JSON (possível bloqueio/captcha)", None
-    dados = d.get("data") or {}
-    user = dados.get("user") or {}
-    status = user.get("status")
-    room = dados.get("liveRoom") or {}
-    if status == 2:
-        viewers = (room.get("liveRoomStats") or {}).get("userCount")
-        _guardar_midia_tiktok(usuario, room, user)
-        return True, "", viewers if isinstance(viewers, int) else None
-    if status is not None:
-        return False, "", None
-    return None, "api: sem campo status (código " + str(d.get("statusCode")) + ")", None
-
-
-def checar_tiktok(usuario):
-    """Retorna (estado, detalhe). estado: True = ao vivo, False = offline, None = incerto."""
-    estado, detalhe_api, _ = checar_tiktok_api(usuario)
-    if estado is not None:
-        return estado, ""
-
-    url = f"https://www.tiktok.com/@{usuario}/live"
-    try:
-        r = subprocess.run(
-            ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best", url],
-            capture_output=True, text=True, timeout=25,
-        )
-    except subprocess.TimeoutExpired:
-        return None, detalhe_api + " | yt-dlp: demorou demais"
-    except FileNotFoundError:
-        return None, detalhe_api + " | yt-dlp não encontrado no servidor"
-    except Exception as e:
-        return None, detalhe_api + " | " + str(e)[-150:]
-    links = [l for l in r.stdout.strip().splitlines() if l.strip().startswith("http")]
-    if r.returncode == 0 and links:
-        return True, ""
-    erro = (r.stderr or "").strip()
-    baixo = erro.lower()
-    if "not currently live" in baixo or "not live" in baixo or "offline" in baixo:
-        return None, detalhe_api + " | yt-dlp diz offline (pode estar errado)"
-    return None, detalhe_api + " | yt-dlp: " + (erro[-150:] or "sem mensagem")
-
-
-TT_ARQ = os.path.join(BASE, "tiktok_cache.json")
-TT_MARCA = TT_ARQ + ".rodando"
-
-
-def tt_ler():
-    try:
-        with open(TT_ARQ, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"hora": 0, "dados": []}
-
-
-def tt_gravar(hora, dados):
-    tmp = TT_ARQ + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"hora": hora, "dados": dados}, f)
-    os.replace(tmp, TT_ARQ)
-
-
-def atualizar_tiktok():
-    resultados = [(None, "")] * len(TIKTOK)
-
-    def worker(i, usuario):
-        try:
-            resultados[i] = checar_tiktok(usuario)
-        except Exception as e:
-            resultados[i] = (None, str(e)[-200:])
-
-    try:
-        threads = [
-            threading.Thread(target=worker, args=(i, c["usuario"]), daemon=True)
-            for i, c in enumerate(TIKTOK)
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=40)
-        dados = [
-            {
-                "nome": c["nome"],
-                "usuario": c["usuario"],
-                "online": resultados[i][0],
-                "detalhe": resultados[i][1],
-                "capa": TT_MIDIA.get(c["usuario"], {}).get("capa", ""),
-                "foto": TT_MIDIA.get(c["usuario"], {}).get("foto", ""),
-            }
-            for i, c in enumerate(TIKTOK)
-        ]
-        tt_gravar(time.time(), dados)
-    finally:
-        with TT_LOCK:
-            TT_CACHE["rodando"] = False
-        try:
-            os.remove(TT_MARCA)
-        except OSError:
-            pass
 
 
 def gravar(job_id, url, minutos):
@@ -1272,60 +917,6 @@ def iniciar():
 
     threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
     return jsonify({"id": job_id})
-
-
-@app.route("/api/tiktok")
-def api_tiktok():
-    cache = tt_ler()
-    iniciar_thread = False
-    if time.time() - cache.get("hora", 0) >= TT_TTL:
-        with TT_LOCK:
-            ativo = (
-                os.path.exists(TT_MARCA)
-                and time.time() - os.path.getmtime(TT_MARCA) < 60
-            )
-            if not ativo and not TT_CACHE["rodando"]:
-                try:
-                    open(TT_MARCA, "w").close()
-                except OSError:
-                    pass
-                TT_CACHE["rodando"] = True
-                iniciar_thread = True
-    if iniciar_thread:
-        threading.Thread(target=atualizar_tiktok, daemon=True).start()
-    dados = cache.get("dados", [])
-    return jsonify({"pronto": bool(dados), "dados": dados})
-
-
-@app.route("/api/tiktok/teste")
-def api_tiktok_teste():
-    info = {"pid_worker": os.getpid()}
-    try:
-        v = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, timeout=10)
-        info["yt_dlp_versao"] = (v.stdout or v.stderr).strip()
-    except FileNotFoundError:
-        info["yt_dlp_versao"] = "NAO INSTALADO"
-    except Exception as e:
-        info["yt_dlp_versao"] = "erro: " + str(e)[-150:]
-
-    usuario = request.args.get("u", TIKTOK[0]["usuario"])
-    info["usuario"] = usuario
-    est, det, vw = checar_tiktok_api(usuario)
-    info["api_direta"] = {"estado": est, "detalhe": det, "viewers": vw}
-    try:
-        r = subprocess.run(
-            ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best",
-             f"https://www.tiktok.com/@{usuario}/live"],
-            capture_output=True, text=True, timeout=20,
-        )
-        info["codigo"] = r.returncode
-        info["saida"] = r.stdout[-200:]
-        info["erro"] = r.stderr[-600:]
-    except subprocess.TimeoutExpired:
-        info["erro"] = "timeout: o yt-dlp não respondeu em 20 segundos"
-    except Exception as e:
-        info["erro"] = str(e)[-300:]
-    return jsonify(info)
 
 
 @app.route("/status/<job_id>")
