@@ -478,7 +478,7 @@ HTML = r"""
           </div>
 
           <div class="campo" id="grupo-min">
-            <label for="min">Duração da captura (minutos)</label>
+            <label for="min">Quantidade de vídeos</label>
             <input id="min" type="number" inputmode="numeric" min="1" max="__MAXMIN__" step="1" value="5">
             <p class="dica" id="min-dica"></p>
           </div>
@@ -651,8 +651,8 @@ function lerMinutos() {
 }
 function atualizarDicaMin() {
   const n = lerMinutos();
-  $('min-dica').textContent = (n === 1 ? '1 minuto grava 1 vídeo' : n + ' minutos gravam ' + n + ' vídeos') +
-    ' de 60 segundos (máximo ' + MAX_MIN + ' min).';
+  $('min-dica').textContent = (n === 1 ? '1 vídeo' : n + ' vídeos') + ' de 60 segundos (' + n +
+    (n === 1 ? ' minuto' : ' minutos') + ' de live). Máximo: ' + MAX_MIN + ' vídeos.';
 }
 $('min').addEventListener('input', atualizarDicaMin);
 $('min').addEventListener('change', function () { $('min').value = lerMinutos(); atualizarDicaMin(); });
