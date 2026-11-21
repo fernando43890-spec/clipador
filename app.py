@@ -41,13 +41,8 @@ PAGINA = """
     --grad: linear-gradient(135deg, #00ff38 0%, #25f4ee 52%, #fe2c55 100%);
   }
 
-  * {
-    box-sizing: border-box;
-  }
-
-  html {
-    scroll-behavior: smooth;
-  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
 
   body {
     margin: 0;
@@ -63,350 +58,143 @@ PAGINA = """
   }
 
   .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
+    position: sticky; top: 0; z-index: 20;
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     background: rgba(7, 6, 11, 0.85);
     border-bottom: 1px solid var(--borda);
   }
-
   .topbar-inner {
-    max-width: 540px;
-    margin: 0 auto;
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    max-width: 540px; margin: 0 auto; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
   }
-
   .brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    text-decoration: none;
-    color: var(--texto);
-    font-weight: 700;
-    font-size: 1rem;
+    display: flex; align-items: center; gap: 10px;
+    text-decoration: none; color: var(--texto); font-weight: 700; font-size: 1rem;
   }
-
   .logo-box {
-    width: 38px;
-    height: 38px;
-    border-radius: 12px;
-    background: #12101a;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 38px; height: 38px; border-radius: 12px; background: #12101a;
+    display: flex; align-items: center; justify-content: center;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(0, 255, 56, 0.3);
   }
-
-  .logo-box svg {
-    width: 26px;
-    height: 26px;
-  }
-
+  .logo-box svg { width: 26px; height: 26px; }
   .btn-topo {
-    background: var(--kick-verde);
-    color: #0d0a16;
-    font-weight: 700;
-    font-size: 0.85rem;
-    padding: 8px 14px;
-    border-radius: 999px;
-    text-decoration: none;
-    border: none;
-    cursor: pointer;
+    background: var(--kick-verde); color: #0d0a16; font-weight: 700;
+    font-size: 0.85rem; padding: 8px 14px; border-radius: 999px;
+    text-decoration: none; border: none; cursor: pointer;
   }
-
-  .wrap {
-    max-width: 540px;
-    margin: 0 auto;
-    padding: 18px 16px 0;
-  }
-
+  .wrap { max-width: 540px; margin: 0 auto; padding: 18px 16px 0; }
   .hero-card {
-    background: var(--surface);
-    border: 1px solid var(--borda-forte);
-    border-radius: 20px;
-    padding: 20px 18px;
+    background: var(--surface); border: 1px solid var(--borda-forte);
+    border-radius: 20px; padding: 20px 18px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   }
-
   .hero-titulo {
-    margin: 0;
-    font-size: 1.45rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    margin: 0; font-size: 1.45rem; font-weight: 800;
+    letter-spacing: -0.02em; line-height: 1.2;
   }
-
-  .hero-sub {
-    margin: 8px 0 16px;
-    color: var(--mutado);
-    font-size: 0.92rem;
-    line-height: 1.48;
-  }
-
-  .hero-sub strong {
-    color: var(--texto);
-  }
-
-  .campo {
-    margin-bottom: 12px;
-  }
-
-  label {
-    display: block;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--mutado);
-    margin-bottom: 6px;
-  }
-
+  .hero-sub { margin: 8px 0 16px; color: var(--mutado); font-size: 0.92rem; line-height: 1.48; }
+  .hero-sub strong { color: var(--texto); }
+  .campo { margin-bottom: 12px; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--mutado); margin-bottom: 6px; }
   input, select {
-    width: 100%;
-    padding: 14px;
-    font-size: 0.96rem;
-    border-radius: 12px;
-    border: 1px solid var(--borda);
-    background: var(--input);
-    color: var(--texto);
-    outline: none;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    width: 100%; padding: 14px; font-size: 0.96rem; border-radius: 12px;
+    border: 1px solid var(--borda); background: var(--input); color: var(--texto);
+    outline: none; transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
-
-  input::placeholder {
-    color: #8c84a8;
-  }
-
+  input::placeholder { color: #8c84a8; }
   input:focus, select:focus {
     border-color: var(--kick-brilho);
     box-shadow: 0 0 0 3px rgba(0, 255, 56, 0.22);
   }
-
   select {
-    appearance: none;
-    -webkit-appearance: none;
+    appearance: none; -webkit-appearance: none;
     background-image:
       linear-gradient(45deg, transparent 50%, var(--mutado) 50%),
       linear-gradient(135deg, var(--mutado) 50%, transparent 50%);
-    background-position:
-      calc(100% - 18px) calc(50% - 2px),
-      calc(100% - 13px) calc(50% - 2px);
+    background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 13px) calc(50% - 2px);
     background-size: 5px 5px, 5px 5px;
     background-repeat: no-repeat;
     padding-right: 36px;
   }
-
   .btn-principal {
-    width: 100%;
-    padding: 15px 18px;
-    margin-top: 4px;
-    font-size: 1rem;
-    font-weight: 700;
-    border-radius: 12px;
-    border: none;
-    background: var(--kick-verde);
-    color: #0d0a16;
-    cursor: pointer;
+    width: 100%; padding: 15px 18px; margin-top: 4px; font-size: 1rem;
+    font-weight: 700; border-radius: 12px; border: none;
+    background: var(--kick-verde); color: #0d0a16; cursor: pointer;
     box-shadow: 0 10px 26px rgba(0, 255, 56, 0.35);
     transition: transform 0.15s ease, background 0.2s ease;
   }
-
-  .btn-principal:hover {
-    background: var(--kick-brilho);
-    transform: translateY(-1px);
-  }
-
-  .btn-principal:active {
-    transform: translateY(0);
-  }
-
-  .btn-principal:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-    transform: none;
-  }
-
+  .btn-principal:hover { background: var(--kick-brilho); transform: translateY(-1px); }
+  .btn-principal:active { transform: translateY(0); }
+  .btn-principal:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
   .caixa {
-    background: var(--surface);
-    border: 1px solid var(--borda);
-    border-radius: 16px;
-    padding: 14px 16px;
-    margin-top: 14px;
-    font-size: 0.92rem;
+    background: var(--surface); border: 1px solid var(--borda);
+    border-radius: 16px; padding: 14px 16px; margin-top: 14px; font-size: 0.92rem;
   }
-
-  #status {
-    font-weight: 600;
-    color: var(--texto);
-  }
-
+  #status { font-weight: 600; color: var(--texto); }
   #lista a {
-    display: block;
-    color: var(--texto);
-    text-decoration: none;
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: var(--surface-2);
-    border: 1px solid var(--borda);
-    margin-top: 8px;
-    font-size: 0.9rem;
-    font-weight: 500;
+    display: block; color: var(--texto); text-decoration: none;
+    padding: 10px 12px; border-radius: 10px; background: var(--surface-2);
+    border: 1px solid var(--borda); margin-top: 8px; font-size: 0.9rem; font-weight: 500;
   }
-
   #lista a:first-child {
-    margin-top: 0;
-    background: rgba(0, 255, 56, 0.22);
-    border-color: var(--kick-brilho);
-    color: var(--kick-brilho);
-    font-weight: 700;
+    margin-top: 0; background: rgba(0, 255, 56, 0.22);
+    border-color: var(--kick-brilho); color: var(--kick-brilho); font-weight: 700;
   }
-
   .diag-topo {
-    font-size: 0.76rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--mutado);
-    font-weight: 700;
+    font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--mutado); font-weight: 700;
   }
-
   pre {
-    white-space: pre-wrap;
-    word-break: break-word;
+    white-space: pre-wrap; word-break: break-word;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.78rem;
-    color: #c4b5fd;
-    margin: 8px 0 0;
-    line-height: 1.45;
+    font-size: 0.78rem; color: #c4b5fd; margin: 8px 0 0; line-height: 1.45;
   }
-
   .card-live {
-    background: var(--surface);
-    border: 1px solid var(--borda-forte);
-    border-radius: 20px;
-    padding: 14px;
-    margin-top: 14px;
+    background: var(--surface); border: 1px solid var(--borda-forte);
+    border-radius: 20px; padding: 14px; margin-top: 14px;
   }
-  .card-topo {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    font-weight: 700;
-  }
+  .card-topo { display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
   .ponto {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--vivo);
-    margin-right: 8px;
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--vivo); margin-right: 8px;
   }
-  .player {
-    width: 100%;
-    aspect-ratio: 16/9;
-    border: 0;
-    border-radius: 12px;
-    background: #000;
-  }
-  .player-aviso {
-    margin: 8px 0 0;
-    font-size: .76rem;
-    color: var(--mutado);
-  }
-
-  .live-item {
-    margin-top: 12px;
-  }
+  .player { width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 12px; background: #000; }
+  .player-aviso { margin: 8px 0 0; font-size: .76rem; color: var(--mutado); }
+  .live-item { margin-top: 12px; }
   .live-topo {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-    font-weight: 700;
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; font-weight: 700;
   }
   .btn-mini {
-    background: var(--kick-verde);
-    color: #0d0a16;
-    border: 0;
-    border-radius: 10px;
-    padding: 8px 12px;
-    font-weight: 700;
-    font-size: .8rem;
-    cursor: pointer;
+    background: var(--kick-verde); color: #0d0a16; border: 0; border-radius: 10px;
+    padding: 8px 12px; font-weight: 700; font-size: .8rem; cursor: pointer;
     transition: filter 0.2s ease;
   }
-  .btn-mini:hover {
-    filter: brightness(1.1);
-  }
-
+  .btn-mini:hover { filter: brightness(1.1); }
   .placeholder {
-    width: 100%;
-    aspect-ratio: 16/9;
-    border-radius: 12px;
-    background: #000;
-    border: 1px solid var(--borda);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    cursor: pointer;
+    width: 100%; aspect-ratio: 16/9; border-radius: 12px; background: #000;
+    border: 1px solid var(--borda); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; cursor: pointer;
     color: var(--texto);
   }
   .placeholder .play {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: var(--kick-verde);
-    color: #0d0a16;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.4rem;
-    padding-left: 4px;
+    width: 56px; height: 56px; border-radius: 50%; background: var(--kick-verde);
+    color: #0d0a16; display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; padding-left: 4px;
   }
-  .placeholder small {
-    color: var(--mutado);
-    font-size: .78rem;
-  }
-  .viewers {
-    font-weight: 500;
-    font-size: .8rem;
-    color: var(--mutado);
-    margin-left: 8px;
-  }
-
+  .placeholder small { color: var(--mutado); font-size: .78rem; }
+  .viewers { font-weight: 500; font-size: .8rem; color: var(--mutado); margin-left: 8px; }
   .hero-titulo {
-    background: var(--grad);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    -webkit-text-fill-color: transparent;
+    background: var(--grad); -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
   }
-  .btn-principal {
-    background: var(--grad);
-  }
-  .btn-principal:hover {
-    background: var(--grad);
-    filter: brightness(1.1);
-  }
-  .btn-topo {
-    background: var(--grad);
-  }
-  .logo-box {
-    border-color: rgba(37, 244, 238, 0.4);
-  }
-  .aviso {
-    color: #7c7496;
-    font-size: 0.78rem;
-    text-align: center;
-    margin: 18px 0 0;
-    line-height: 1.45;
-  }
+  .btn-principal { background: var(--grad); }
+  .btn-principal:hover { background: var(--grad); filter: brightness(1.1); }
+  .btn-topo { background: var(--grad); }
+  .logo-box { border-color: rgba(37, 244, 238, 0.4); }
+  .aviso { color: #7c7496; font-size: 0.78rem; text-align: center; margin: 18px 0 0; line-height: 1.45; }
 </style>
 </head>
 <body>
@@ -446,6 +234,8 @@ PAGINA = """
       <div class="campo" id="grupo-min">
         <label for="min">Duração da captura</label>
         <select id="min">
+          <option value="0.5">Gravar 30 segundos</option>
+          <option value="1">Gravar 1 minuto</option>
           <option value="5">Gravar 5 minutos (teste)</option>
           <option value="15">Gravar 15 minutos</option>
           <option value="30">Gravar 30 minutos</option>
@@ -877,7 +667,7 @@ def gravar(job_id, url, minutos, seg=SEG):
         "-reconnect_delay_max", "5",
         "-rw_timeout", "15000000",
         "-i", stream,
-        "-t", str(minutos * 60),
+        "-t", str(int(minutos * 60)),  # MUDANÇA: aceita número quebrado (0.5 = 30s)
         "-c", "copy",
         "-f", "segment",
         "-segment_time", str(seg),
@@ -1010,8 +800,18 @@ def listar_vods(slug):
             "duracao_s": int((v.get("duration") or 0) / 1000),
             "views": v.get("views") or 0,
             "source": v.get("source") or "",
+            "ao_vivo": bool(v.get("is_live")),  # MUDANÇA: marca a live em andamento
         })
     return out, ""
+
+
+# MUDANÇA: função nova. Pula a live em andamento (duração 0)
+def escolher_vod(vods):
+    """Primeira live já encerrada (a em andamento vem com duração 0)."""
+    for v in vods:
+        if v["duracao_s"] > 0 and not v.get("ao_vivo"):
+            return v
+    return None
 
 
 def _iso_para_epoch(txt):
@@ -1136,7 +936,7 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade):
     if m:
         escolhida = next((v for v in vods if v["uuid"] == m.group(1)), None)
     if not escolhida:
-        escolhida = vods[0]
+        escolhida = escolher_vod(vods) or vods[0]  # MUDANÇA: pula a live em andamento
 
     inicio_epoch = _iso_para_epoch(escolhida["inicio"])
     dur = escolhida["duracao_s"]
@@ -1221,17 +1021,24 @@ def iniciar():
 
     url = normalizar_url(url)
 
+    # MUDANÇA: aceita número quebrado (0.5 = 30 segundos)
     try:
-        minutos = int(dados.get("min", 5))
+        minutos = float(dados.get("min", 5))
     except (TypeError, ValueError):
         minutos = 5
-    minutos = max(1, min(minutos, 180))
+    minutos = max(0.5, min(minutos, 180))
 
     try:
         seg = int(dados.get("seg", 60))
     except (TypeError, ValueError):
         seg = 60
     if seg not in (30, 60):
+        seg = 60
+
+    # MUDANÇA: o clipe segue a captura. 30s -> clipe de 30s; o resto -> clipes de 1 minuto
+    if minutos <= 0.5:
+        seg = 30
+    else:
         seg = 60
 
     job_id = uuid.uuid4().hex[:8]
@@ -1246,7 +1053,6 @@ def iniciar():
 
     threading.Thread(target=gravar, args=(job_id, url, minutos, seg), daemon=True).start()
     return jsonify({"id": job_id})
-
 
 
 @app.route("/iniciar_vod", methods=["POST"])
@@ -1286,7 +1092,7 @@ def api_vod_teste():
     vods, erro = listar_vods(slug)
     info["lista_vods"] = {"ok": bool(vods), "quantidade": len(vods), "erro": erro}
     if vods:
-        v = vods[0]
+        v = escolher_vod(vods) or vods[0]  # MUDANÇA: pula a live em andamento
         info["primeira_vod"] = {"titulo": v["titulo"][:60], "inicio": v["inicio"], "duracao_s": v["duracao_s"]}
         canal, e2 = kick_get_json("https://kick.com/api/v2/channels/%s" % quote(slug))
         info["canal_id"] = {"ok": bool(canal and "id" in canal), "erro": e2}
