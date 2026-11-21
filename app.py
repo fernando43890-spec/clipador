@@ -1998,11 +1998,8 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
     return tempos, ""
 
 
-def baixar_chat_vod_amostrado(canal_slug, inicio_epoch, duracao_s, progresso=None):
-    """Analisa até 1h do início, 2h centrais e 3h finais da VOD, sem percorrer o restante."""
-    duracao_s = max(0, int(duracao_s))
-    if duracao_s <= 0:
-        return [], "duração inválida"
+def _intervalos_amostra(duracao_s):
+    """Trechos (em segundos) cujo chat será lido: 1h do início, 2h centrais e 3h finais, já sem sobreposição."""
     inicio = (0, min(3600, duracao_s))
     meio_ini = max(0, (duracao_s - 7200) // 2)
     meio = (meio_ini, min(duracao_s, meio_ini + 7200))
@@ -2015,17 +2012,39 @@ def baixar_chat_vod_amostrado(canal_slug, inicio_epoch, duracao_s, progresso=Non
             intervalos[-1] = (intervalos[-1][0], max(intervalos[-1][1], b))
         else:
             intervalos.append((a, b))
+    return intervalos
+
+
+def baixar_chat_vod_amostrado(canal_slug, inicio_epoch, duracao_s, progresso=None):
+    """Analisa até 1h do início, 2h centrais e 3h finais da VOD, sem percorrer o restante.
+    progresso(paginas, mensagens, fracao): fracao = parte (0 a 1) do total a ler que já foi lida."""
+    duracao_s = max(0, int(duracao_s))
+    if duracao_s <= 0:
+        return [], "duração inválida"
+    intervalos = _intervalos_amostra(duracao_s)
+    total_s = float(sum(b - a for a, b in intervalos)) or 1.0
     todos = set()
     erros = []
-    paginas_total = 0
-    for idx, (a, b) in enumerate(intervalos, 1):
-        def prog(pags, msgs, menor=None):
-            nonlocal paginas_total
-            paginas_total += pags
-            if progresso:
-                progresso(paginas_total, len(todos) + msgs, menor)
+    paginas_antes = 0
+    lido_antes = 0
+    for a, b in intervalos:
+        ultimas = {"pags": 0}
+
+        def prog(pags, msgs, menor=None, a=a, b=b, lido_antes=lido_antes, paginas_antes=paginas_antes, ultimas=ultimas):
+            ultimas["pags"] = pags
+            if not progresso:
+                return
+            frac = None
+            if menor is not None:
+                # dentro do trecho o chat é lido de trás pra frente: já lemos de 'menor' até 'b'
+                rel = min(b, max(a, menor - inicio_epoch))
+                frac = min(1.0, (lido_antes + (b - rel)) / total_s)
+            progresso(paginas_antes + pags, len(todos) + msgs, frac)
+
         tempos, erro = baixar_chat_vod(canal_slug, inicio_epoch + a, b - a, prog)
         todos.update(round(a + t, 3) for t in tempos)
+        paginas_antes += ultimas["pags"]
+        lido_antes += b - a
         if erro:
             erros.append(erro)
     return sorted(todos), ("; ".join(erros) if erros and not todos else "")
@@ -2160,13 +2179,10 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade, formato="original"):
 
     t_chat = time.time()
 
-    def prog(pags, msgs, menor=None):
+    def prog(pags, msgs, frac=None):
         resto = ""
         try:
-            fim_epoch = inicio_epoch + dur
-            if menor is not None and dur > 0:
-                feito = max(0.0, fim_epoch - max(menor, inicio_epoch))
-                frac = min(1.0, feito / float(dur))
+            if frac is not None:
                 gasto = time.time() - t_chat
                 if frac > 0.01 and gasto > 5:
                     falta = int(gasto * (1 - frac) / frac)
