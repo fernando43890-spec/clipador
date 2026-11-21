@@ -1661,7 +1661,7 @@ def diagnosticar_youtube(url):
         return None, "Cole um link válido de vídeo ou live do YouTube."
     cookie_path = None
     cookie_b64 = os.environ.get("YOUTUBE_COOKIES_B64", "").strip()
-    base_cmd = ["yt-dlp", *_argumentos_youtube_pot(), "--skip-download",
+    base_cmd = ["yt-dlp", *_argumentos_youtube_pot("web_safari"), "--skip-download",
                 "--dump-single-json"]
     try:
         if cookie_b64:
@@ -1684,11 +1684,12 @@ def diagnosticar_youtube(url):
                 pass
             base_cmd += ["--cookies", cookie_path]
 
-        # mweb aciona o BgUtils para gerar o GVS PO Token; os clientes seguintes
-        # são fallback automático, não dependem de cookies.
+        # Para lives, web_safari pode oferecer HLS sem PO Token. Se falhar,
+        # tenta mweb com BgUtils e depois outros clientes públicos.
         tentativas = [base_cmd]
         if not cookie_path:
             tentativas += [
+                ["yt-dlp", *_argumentos_youtube_pot("mweb"), "--skip-download", "--dump-single-json"],
                 ["yt-dlp", *_argumentos_youtube_pot("tv,web_safari"), "--skip-download", "--dump-single-json"],
                 ["yt-dlp", "--ignore-config", "--no-warnings", "--no-playlist",
                  "--skip-download", "--dump-single-json", "--socket-timeout", "20",
@@ -1732,8 +1733,6 @@ def diagnosticar_youtube(url):
         "id": str(info.get("id") or "")[:32],
         "titulo": str(info.get("title") or "Vídeo do YouTube")[:160],
         "duracao_s": int(info.get("duration") or 0),
-        "status_live": str(info.get("live_status") or "not_live")[:40],
-        "disponivel": bool(info.get("formats") or info.get("url")),
     }, ""
 
 
@@ -1905,8 +1904,11 @@ def extrair_stream(url):
         return None, {}, erro_msg[-700:]
 
     # Para o YouTube, diagnóstico e extração usam os mesmos clientes/PO Token.
+    # Em lives, web_safari pode oferecer HLS, que atualmente não exige PO Token
+    # para GVS. Tentamos esse caminho primeiro; mweb + BgUtils vem em seguida.
     tentativas = [
-        _argumentos_youtube_pot("mweb,tv,web_safari"),
+        _argumentos_youtube_pot("web_safari"),
+        _argumentos_youtube_pot("mweb"),
         _argumentos_youtube_pot("tv,web_safari"),
         ["--ignore-config", "--no-warnings", "--no-playlist"],
     ]
