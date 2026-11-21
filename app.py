@@ -16,6 +16,10 @@ Variáveis novas de segurança:
     CLIPADOR_PROXY_SALTOS=1   quantos proxies existem na frente (ex.: Cloudflare + Render = 2).
     CLIPADOR_MAX_DISCO_MB=4096  para de aceitar tarefas quando a pasta de clipes passa desse tamanho (0 = sem limite).
     CLIPADOR_TESTE=1          liga a rota /api/vod/teste e o botão de diagnóstico (deixe desligado em produção).
+    CLIPADOR_ADMIN_SENHA=...  liga a página /admin/feedbacks (login pelo navegador: qualquer usuário + esta senha).
+                              Sem definir, a página não existe (404). Use uma senha longa e só acesse por HTTPS.
+    CLIPADOR_DADOS_DIR=...    pasta dos feedbacks, separada dos clipes. Aponte para um disco persistente da hospedagem,
+                              senão os feedbacks somem quando o servidor reinicia. Sem definir, usa CLIPADOR_DIR.
 """
 import functools
 import json
@@ -70,6 +74,11 @@ VALIDADE_S = _env_int("CLIPADOR_VALIDADE_MIN", 120) * 60    # quanto tempo os ar
 CONTATO = os.environ.get("CLIPADOR_CONTATO", "").strip()    # e-mail para pedidos de remoção (aparece nos termos)
 MAX_DISCO_MB = _env_int("CLIPADOR_MAX_DISCO_MB", 4096)      # teto de espaço usado pelos clipes (0 = sem limite)
 TESTE_ATIVO = os.environ.get("CLIPADOR_TESTE", "0") == "1"  # rota de diagnóstico /api/vod/teste
+ADMIN_SENHA = os.environ.get("CLIPADOR_ADMIN_SENHA", "").strip()   # senha da página /admin/feedbacks ("" = página desligada)
+DADOS = os.environ.get("CLIPADOR_DADOS_DIR") or BASE        # onde ficam os feedbacks (use um disco persistente)
+os.makedirs(DADOS, exist_ok=True)
+ARQ_FEEDBACK = os.path.join(DADOS, "feedback.jsonl")
+FEEDBACK_MAX_BYTES = 5 * 1024 * 1024                        # a caixa de feedbacks para de aceitar acima disso
 
 HOSTS_KICK = {"kick.com", "kzl.ink"}
 HOSTS_ENCURTADOR = {"kzl.ink"}          # só estes são resolvidos; o destino final TEM de ser kick.com
@@ -2319,14 +2328,149 @@ def receber_feedback():
     mensagem = str(dados.get("mensagem", "")).strip()
     if tipo not in ("sugestao", "problema", "elogio") or not 5 <= len(mensagem) <= 2000:
         return jsonify({"erro": "Confira o tipo e escreva uma mensagem entre 5 e 2.000 caracteres."}), 400
-    caminho = os.path.join(BASE, "feedback.jsonl")
+    caminho = ARQ_FEEDBACK
     try:
+        if os.path.isfile(caminho) and os.path.getsize(caminho) >= FEEDBACK_MAX_BYTES:
+            return jsonify({"erro": "A caixa de feedbacks está cheia no momento. Tente novamente mais tarde."}), 503
         with open(caminho, "a", encoding="utf-8") as arq:
             arq.write(json.dumps({"data": datetime.now(timezone.utc).isoformat(), "tipo": tipo,
                                   "mensagem": mensagem}, ensure_ascii=False) + "\n")
     except OSError:
         return jsonify({"erro": "Não foi possível salvar agora. Tente novamente mais tarde."}), 500
     return jsonify({"ok": True})
+
+
+# ---------- página do dono: ler os feedbacks ----------
+try:
+    from zoneinfo import ZoneInfo
+    _FUSO_BR = ZoneInfo("America/Sao_Paulo")
+except Exception:          # sem o banco de fusos no sistema: mostra em UTC
+    _FUSO_BR = None
+
+_ADMIN_FALHAS = {}         # ip -> (erros, início da janela)
+_ADMIN_LOCK = threading.Lock()
+_ADMIN_MAX_ERROS, _ADMIN_JANELA_S = 5, 900
+
+
+def _admin_espera(ip):
+    """Segundos de bloqueio por senha errada (0 = liberado). Vale mesmo se a próxima tentativa estiver certa."""
+    agora = time.time()
+    with _ADMIN_LOCK:
+        erros, ini = _ADMIN_FALHAS.get(ip, (0, agora))
+        if agora - ini > _ADMIN_JANELA_S:
+            _ADMIN_FALHAS.pop(ip, None)
+            return 0
+        return int(ini + _ADMIN_JANELA_S - agora) + 1 if erros >= _ADMIN_MAX_ERROS else 0
+
+
+def _admin_falhou(ip):
+    agora = time.time()
+    with _ADMIN_LOCK:
+        if len(_ADMIN_FALHAS) > 5000:
+            _ADMIN_FALHAS.clear()
+        erros, ini = _ADMIN_FALHAS.get(ip, (0, agora))
+        if agora - ini > _ADMIN_JANELA_S:
+            erros, ini = 0, agora
+        _ADMIN_FALHAS[ip] = (erros + 1, ini)
+
+
+def _ler_feedbacks(limite=200):
+    """Os feedbacks mais recentes primeiro (lê só o fim do arquivo, no máximo 1 MB)."""
+    try:
+        with open(ARQ_FEEDBACK, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 1_000_000))
+            bruto = f.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return []
+    itens = []
+    for linha in bruto.splitlines():
+        try:
+            d = json.loads(linha)
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            itens.append(d)
+    return itens[-limite:][::-1]
+
+
+def _data_br(txt):
+    try:
+        dt = datetime.fromisoformat(str(txt))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if _FUSO_BR:
+            return dt.astimezone(_FUSO_BR).strftime("%d/%m/%Y %H:%M")
+        return dt.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    except (ValueError, TypeError):
+        return "?"
+
+
+_TIPOS_FEEDBACK = {"sugestao": "Sugestão", "problema": "Problema", "elogio": "Elogio"}
+
+_ADMIN_HTML = """<!doctype html>
+<html lang="pt-br"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><meta name="color-scheme" content="dark">
+<title>Feedbacks – Clipador</title>
+<style nonce="__NONCE__">
+  body { margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+         background: linear-gradient(180deg, #0a2412 0, #050906 480px) #050906; color: #f7f7fb; line-height: 1.45; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 6px 0 2px; }
+  .sub { color: #a9bbae; font-size: .85rem; margin: 0 0 14px; }
+  .item { background: #0c120e; border: 1px solid rgba(110,220,145,.18); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .topo { display: flex; justify-content: space-between; gap: 8px; font-size: .78rem; color: #a9bbae; margin-bottom: 6px; }
+  .tipo { font-weight: 800; color: #58e879; }
+  .tipo.problema { color: #ff7a93; }
+  .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .vazio { color: #a9bbae; text-align: center; padding: 30px 0; }
+</style></head><body><main>
+<h1>Feedbacks</h1>
+<p class="sub">__SUB__</p>
+__ITENS__
+</main></body></html>"""
+
+
+@app.route("/admin/feedbacks")
+def admin_feedbacks():
+    if not ADMIN_SENHA:
+        return "Não encontrado", 404
+    ip = ip_cliente()
+    espera = _admin_espera(ip)
+    if espera:
+        resp = Response("Muitas tentativas erradas. Espere %d min." % ((espera + 59) // 60), status=429)
+        resp.headers["Retry-After"] = str(espera)
+        return resp
+    auth = request.authorization
+    certo = bool(auth and auth.password and
+                 secrets.compare_digest(auth.password.encode("utf-8"), ADMIN_SENHA.encode("utf-8")))
+    if not certo:
+        _admin_falhou(ip)
+        return Response("Senha necessária.", status=401,
+                        headers={"WWW-Authenticate": 'Basic realm="Clipador", charset="UTF-8"'})
+
+    itens = _ler_feedbacks()
+    if itens:
+        blocos = []
+        for d in itens:
+            tipo = str(d.get("tipo", ""))
+            blocos.append(
+                '<div class="item"><div class="topo"><span class="tipo %s">%s</span><span>%s</span></div>'
+                '<div class="msg">%s</div></div>' % (
+                    escape(tipo) if tipo in _TIPOS_FEEDBACK else "",
+                    escape(_TIPOS_FEEDBACK.get(tipo, "Outro")),
+                    escape(_data_br(d.get("data"))),
+                    escape(str(d.get("mensagem", "")))))
+        corpo = "\n".join(blocos)
+    else:
+        corpo = '<p class="vazio">Nenhum feedback ainda.</p>'
+    sub = "Mais recentes primeiro (até 200). Horário de Brasília." if _FUSO_BR else "Mais recentes primeiro (até 200). Horário UTC."
+    g.nonce = secrets.token_urlsafe(16)
+    html = _ADMIN_HTML.replace("__NONCE__", g.nonce).replace("__SUB__", sub).replace("__ITENS__", corpo)
+    resp = Response(html, mimetype="text/html")
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
 
 
 @app.route("/iniciar", methods=["POST"])
