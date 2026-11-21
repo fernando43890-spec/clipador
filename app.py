@@ -9,26 +9,35 @@ Produção (use 1 worker: os jobs ficam em memória, então vários workers não
 
 Arquivo único: o HTML da página está embutido na variável HTML.
 Precisa do ffmpeg (com ffprobe) instalado no sistema. Variáveis de ambiente opcionais: veja o LEIAME.md.
+
+Variáveis novas de segurança:
+    CLIPADOR_PROXY=1|0        1 = confia no X-Forwarded-For (use só atrás de proxy/nginx/Render...). 0 = nunca.
+                              Sem definir: liga sozinho se detectar Render, Railway, Fly, Heroku ou Cloud Run.
+    CLIPADOR_PROXY_SALTOS=1   quantos proxies existem na frente (ex.: Cloudflare + Render = 2).
+    CLIPADOR_MAX_DISCO_MB=4096  para de aceitar tarefas quando a pasta de clipes passa desse tamanho (0 = sem limite).
+    CLIPADOR_TESTE=1          liga a rota /api/vod/teste e o botão de diagnóstico (deixe desligado em produção).
 """
+import functools
 import json
 import logging
 import math
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
 import threading
 import time
-import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from html import escape
-from urllib.parse import quote, urlparse
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.parse import quote, urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, g, jsonify, request, send_file
 
 try:
     from curl_cffi import requests as curl_requests  # passa melhor na Cloudflare
@@ -59,12 +68,17 @@ MAX_ATIVOS_POR_IP = _env_int("CLIPADOR_MAX_POR_IP", 2)      # tarefas ativas por
 MAX_ATIVOS_TOTAL = _env_int("CLIPADOR_MAX_FILA", 20)        # tarefas ativas no servidor todo (fila inclusa)
 VALIDADE_S = _env_int("CLIPADOR_VALIDADE_MIN", 120) * 60    # quanto tempo os arquivos ficam no servidor
 CONTATO = os.environ.get("CLIPADOR_CONTATO", "").strip()    # e-mail para pedidos de remoção (aparece nos termos)
+MAX_DISCO_MB = _env_int("CLIPADOR_MAX_DISCO_MB", 4096)      # teto de espaço usado pelos clipes (0 = sem limite)
+TESTE_ATIVO = os.environ.get("CLIPADOR_TESTE", "0") == "1"  # rota de diagnóstico /api/vod/teste
 
 HOSTS_KICK = {"kick.com", "kzl.ink"}
+HOSTS_ENCURTADOR = {"kzl.ink"}          # só estes são resolvidos; o destino final TEM de ser kick.com
 ESTADOS_FINAIS = ("fim", "erro")
 FORMATOS = ("original", "vertical_blur", "vertical_crop")
 RE_SLUG = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
-RE_PASTA_JOB = re.compile(r"^[0-9a-f]{8}$")
+# ids novos têm 22 caracteres (128 bits, impossível de adivinhar); o formato antigo de 8 hex segue aceito só na limpeza
+RE_JOB_ID = re.compile(r"^[A-Za-z0-9_-]{22}$")
+RE_PASTA_JOB = re.compile(r"^([0-9a-f]{8}|[A-Za-z0-9_-]{22})$")
 
 # Canais exibidos em "Lives agora na Kick". Edite aqui: o site pega esta lista automaticamente.
 CANAIS = [
@@ -84,11 +98,25 @@ UA_NAV = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
           "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 app = Flask(__name__)
-if os.environ.get("CLIPADOR_PROXY", "1") == "1":
-    # atrás de proxy (Render, Railway, nginx...) o IP real vem em X-Forwarded-For.
-    # Se rodar direto na internet sem proxy, use CLIPADOR_PROXY=0.
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024   # os pedidos são JSONs minúsculos; recusa o resto (HTTP 413)
+
+
+def _proxy_ativo():
+    """Só confia no X-Forwarded-For quando há mesmo um proxy na frente; senão qualquer um forja o IP e burla os limites."""
+    valor = os.environ.get("CLIPADOR_PROXY", "").strip()
+    if valor in ("0", "1"):
+        return valor == "1"
+    plataformas = ("RENDER", "RAILWAY_ENVIRONMENT", "FLY_APP_NAME", "DYNO", "K_SERVICE", "KOYEB_APP_NAME")
+    return any(os.environ.get(k) for k in plataformas)
+
+
+if _proxy_ativo():
     from werkzeug.middleware.proxy_fix import ProxyFix
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    _saltos = max(1, _env_int("CLIPADOR_PROXY_SALTOS", 1))
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_saltos, x_proto=_saltos, x_host=_saltos)
+    log.info("Proxy reverso: confiando no X-Forwarded-For (%d salto/s).", _saltos)
+else:
+    log.info("Sem proxy reverso: usando o IP da conexão. Atrás de nginx etc., defina CLIPADOR_PROXY=1.")
 
 
 HTML = r"""
@@ -96,412 +124,396 @@ HTML = r"""
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#08090e">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Corte lives da Kick em clipes de 30 segundos ou 1 minuto, em MP4 horizontal ou vertical 9:16.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Clipador de lives – Kick">
+<meta property="og:description" content="Cole o link da Kick e baixe os melhores momentos da live em clipes prontos.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2314151d'/%3E%3Cpath d='M22 24H40L60 50L40 76H22L42 50Z' fill='%2358e879'/%3E%3Cpath d='M48 24H66L86 50L66 76H48L68 50Z' fill='%2358e879' opacity='.65'/%3E%3C/svg%3E">
 <title>Clipador de lives – Kick</title>
-<style>
+<style nonce="__NONCE__">
   :root {
-    --bg: #07060b;
-    --surface: #12101a;
-    --surface-2: #191624;
-    --input: #1f1b2e;
-    --borda: rgba(168, 130, 255, 0.16);
-    --borda-forte: rgba(168, 130, 255, 0.34);
-    --kick-verde: #00ff38;
-    --kick-brilho: #66ff88;
-    --texto: #f5f3ff;
-    --mutado: #a69ec2;
-    --vivo: #ef4444;
-    --tt-rosa: #fe2c55;
-    --tt-azul: #25f4ee;
-    --grad: linear-gradient(135deg, #00ff38 0%, #25f4ee 52%, #fe2c55 100%);
+    --bg: #08090e;
+    --surface: #12131b;
+    --surface-2: #191b26;
+    --input: #151822;
+    --borda: rgba(180, 184, 210, .16);
+    --borda-forte: rgba(180, 184, 210, .28);
+    --verde: #58e879;
+    --verde-2: #76f59a;
+    --ciano: #29dce8;
+    --rosa: #ff3264;
+    --texto: #f7f7fb;
+    --mutado: #aeb2c2;
+    --erro: #ff7a93;
+    --grad: linear-gradient(110deg, #29dce8 0%, #4ee39a 50%, #ff3264 100%);
+    --fonte: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0;
-    min-height: 100vh;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-    color: var(--texto);
+    margin: 0; min-height: 100vh;
+    font-family: var(--fonte); color: var(--texto); line-height: 1.45;
     background:
-      radial-gradient(ellipse at 18% -8%, rgba(0, 255, 56, 0.15), transparent 55%),
-      radial-gradient(ellipse at 85% -8%, rgba(254, 44, 85, 0.14), transparent 55%),
-      radial-gradient(ellipse at 52% 0%, rgba(37, 244, 238, 0.07), transparent 50%),
+      radial-gradient(ellipse at 8% -6%, rgba(78, 227, 154, .08), transparent 42%),
+      radial-gradient(ellipse at 96% 0%, rgba(255, 50, 100, .07), transparent 40%),
       var(--bg);
-    padding-bottom: 40px;
   }
+  .oculto { display: none; }
 
+  /* ---------- topo ---------- */
   .topbar {
     position: sticky; top: 0; z-index: 20;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    background: rgba(7, 6, 11, 0.85);
+    background: rgba(8, 9, 14, .88);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--borda);
+    padding-top: env(safe-area-inset-top);
   }
-  .topbar-inner {
-    max-width: 540px; margin: 0 auto; padding: 12px 16px;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  }
-  .brand {
-    display: flex; align-items: center; gap: 10px;
-    text-decoration: none; color: var(--texto); font-weight: 700; font-size: 1rem;
-  }
+  .topbar-inner { max-width: 560px; margin: 0 auto; padding: 12px 16px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--texto); text-decoration: none; }
   .logo-box {
-    width: 38px; height: 38px; border-radius: 12px; background: #12101a;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(37, 244, 238, 0.4);
+    width: 36px; height: 36px; border-radius: 10px; background: var(--surface);
+    border: 1px solid var(--borda-forte); display: grid; place-items: center;
   }
-  .logo-box svg { width: 26px; height: 26px; }
-  .wrap { max-width: 540px; margin: 0 auto; padding: 18px 16px 0; }
+  .logo-box svg { width: 22px; height: 22px; }
+  .brand-nome { font-weight: 750; font-size: 1.08rem; letter-spacing: -.02em; line-height: 1.1; }
+  .brand-sub { display: block; font-weight: 500; font-size: .76rem; color: var(--verde); letter-spacing: 0; margin-top: 1px; }
+
+  /* ---------- estrutura ---------- */
+  .wrap { max-width: 560px; margin: 0 auto; padding: 16px 16px calc(36px + env(safe-area-inset-bottom)); }
+  .layout { display: grid; gap: 14px; }
+  .col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+  @media (min-width: 900px) {
+    .topbar-inner, .wrap { max-width: 1080px; }
+    .topbar-inner { padding: 14px 24px; }
+    .wrap { padding: 24px 24px 44px; }
+    .layout { grid-template-columns: minmax(0, 470px) minmax(0, 1fr); gap: 22px; align-items: start; }
+  }
+
+  /* ---------- cartões ---------- */
   .hero-card {
-    background: var(--surface); border: 1px solid var(--borda-forte);
-    border-radius: 20px; padding: 20px 18px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+    background: linear-gradient(150deg, #181a25, #12131b);
+    border: 1px solid var(--borda-forte); border-radius: 18px; padding: 22px 18px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
   }
   .hero-titulo {
-    margin: 0; font-size: 1.45rem; font-weight: 800;
-    letter-spacing: -0.02em; line-height: 1.2;
+    margin: 0; font-size: clamp(1.65rem, 6.4vw, 2.1rem); font-weight: 800;
+    letter-spacing: -.03em; line-height: 1.12;
     background: var(--grad); -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
   }
-  .hero-sub { margin: 8px 0 16px; color: var(--mutado); font-size: 0.92rem; line-height: 1.48; }
+  .hero-sub { margin: 10px 0 20px; color: #d3d5df; font-size: .96rem; line-height: 1.5; max-width: 60ch; }
   .hero-sub strong { color: var(--texto); }
-  .campo { margin-bottom: 12px; }
-  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--mutado); margin-bottom: 6px; }
+  .caixa, .card-live {
+    background: var(--surface); border: 1px solid var(--borda); border-radius: 14px;
+    padding: 15px 16px;
+  }
+  .card-live { padding: 14px; }
+  .lives-box { margin-top: 14px; }
+  .titulo-caixa { display: block; font-size: .95rem; font-weight: 700; color: var(--texto); margin-bottom: 10px; }
+
+  /* ---------- formulário ---------- */
+  .campo { margin-bottom: 14px; min-width: 0; }
+  label { display: block; font-size: .86rem; font-weight: 600; color: #e9eaf1; margin-bottom: 7px; }
   input, select {
-    width: 100%; padding: 14px; font-size: 0.96rem; border-radius: 12px;
-    border: 1px solid var(--borda); background: var(--input); color: var(--texto);
-    outline: none; transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    width: 100%; min-height: 50px; padding: 13px 14px; font: inherit; font-size: .96rem;
+    color: var(--texto); background-color: var(--input);
+    border: 1px solid var(--borda-forte); border-radius: 11px; outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  input::placeholder { color: #8c84a8; }
-  input:focus, select:focus {
-    border-color: var(--kick-brilho);
-    box-shadow: 0 0 0 3px rgba(0, 255, 56, 0.22);
-  }
+  input::placeholder { color: #8d91a3; }
+  input:focus, select:focus { border-color: var(--verde-2); box-shadow: 0 0 0 3px rgba(88, 232, 121, .2); }
   select {
-    appearance: none; -webkit-appearance: none;
+    appearance: none; -webkit-appearance: none; padding-right: 38px;
     background-image:
       linear-gradient(45deg, transparent 50%, var(--mutado) 50%),
       linear-gradient(135deg, var(--mutado) 50%, transparent 50%);
-    background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 13px) calc(50% - 2px);
-    background-size: 5px 5px, 5px 5px;
-    background-repeat: no-repeat;
-    padding-right: 36px;
+    background-position: calc(100% - 19px) calc(50% - 2px), calc(100% - 14px) calc(50% - 2px);
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
   }
+  .dica { margin: 8px 0 0; font-size: .8rem; color: var(--mutado); line-height: 1.5; }
+
+  .fmt-linha { display: flex; gap: 10px; align-items: center; }
+  .fmt-linha select { flex: 1; min-width: 0; }
+  .fmt-cel {
+    flex: none; width: 66px; height: 70px; display: grid; place-items: center;
+    background: var(--input); border: 1px solid var(--borda); border-radius: 11px;
+  }
+  .fmt-prev { position: relative; overflow: hidden; width: 48px; height: 27px; border-radius: 4px; background: #2b2f40; transition: width .2s ease, height .2s ease; }
+  .fmt-prev i { position: absolute; inset: 0; background: linear-gradient(110deg, var(--ciano), var(--verde)); }
+  .fmt-cel[data-fmt="vertical_blur"] .fmt-prev { width: 34px; height: 60px; background: linear-gradient(160deg, rgba(41, 220, 232, .4), rgba(88, 232, 121, .4)); }
+  .fmt-cel[data-fmt="vertical_blur"] .fmt-prev i { top: 34%; bottom: 34%; }
+  .fmt-cel[data-fmt="vertical_crop"] .fmt-prev { width: 34px; height: 60px; }
+
+  button { font: inherit; }
   .btn-principal {
-    width: 100%; padding: 15px 18px; margin-top: 4px; font-size: 1rem;
-    font-weight: 700; border-radius: 12px; border: none;
-    background: var(--grad); color: #0d0a16; cursor: pointer;
-    box-shadow: 0 10px 26px rgba(0, 255, 56, 0.35);
-    transition: transform 0.15s ease, filter 0.2s ease;
+    width: 100%; min-height: 54px; padding: 14px 18px; margin-top: 4px;
+    font-size: 1.02rem; font-weight: 750; border: 0; border-radius: 12px;
+    background: var(--grad); color: #0b0c12; cursor: pointer;
+    transition: transform .12s ease, filter .15s ease;
   }
-  .btn-principal:hover { filter: brightness(1.1); transform: translateY(-1px); }
-  .btn-principal:active { transform: translateY(0); }
-  .btn-principal:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-  .caixa {
-    background: var(--surface); border: 1px solid var(--borda);
-    border-radius: 16px; padding: 14px 16px; margin-top: 14px; font-size: 0.92rem;
-  }
-  #status { font-weight: 600; color: var(--texto); }
-  .diag-topo {
-    font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--mutado); font-weight: 700;
-  }
-  pre {
-    white-space: pre-wrap; word-break: break-word;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.78rem; color: #c4b5fd; margin: 8px 0 0; line-height: 1.45;
-  }
-  .card-live {
-    background: var(--surface); border: 1px solid var(--borda-forte);
-    border-radius: 20px; padding: 14px; margin-top: 14px;
-  }
-  .card-topo { display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: 700; }
-  .ponto {
-    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-    background: var(--vivo); margin-right: 8px;
-  }
-  .player { width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 12px; background: #000; }
-  .player-aviso { margin: 8px 0 0; font-size: .76rem; color: var(--mutado); }
-  .live-item { margin-top: 12px; }
-  .live-topo {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 8px; font-weight: 700;
-  }
+  .btn-principal:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .btn-principal:active { transform: none; }
+  .btn-principal:disabled { opacity: .55; cursor: not-allowed; transform: none; filter: none; }
   .btn-mini {
-    background: var(--kick-verde); color: #0d0a16; border: 0; border-radius: 10px;
-    padding: 8px 12px; font-weight: 700; font-size: .8rem; cursor: pointer;
-    transition: filter 0.2s ease;
+    background: var(--verde); color: #0b0c12; border: 1px solid var(--verde); border-radius: 10px;
+    padding: 9px 13px; font-weight: 700; font-size: .82rem; cursor: pointer; text-decoration: none;
+    transition: filter .15s ease; display: inline-block; text-align: center;
   }
-  .btn-mini:hover { filter: brightness(1.1); }
-  .btn-mini:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-mini:hover { filter: brightness(1.08); }
+  .btn-mini:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-mini.sec { background: transparent; color: var(--texto); border-color: var(--borda-forte); }
+  .btn-mini.sec:hover { border-color: var(--verde-2); }
+  .btn-mini.off { color: var(--mutado); }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--ciano); outline-offset: 2px; }
+
+  /* ---------- status e progresso ---------- */
+  #status { position: relative; padding-left: 24px; font-weight: 600; min-height: 22px; }
+  #status::before {
+    content: ''; position: absolute; left: 0; top: .42em; width: 10px; height: 10px;
+    border-radius: 50%; background: #6d7186;
+  }
+  #status[data-estado="trabalhando"]::before { background: var(--verde); box-shadow: 0 0 0 4px rgba(88, 232, 121, .18); }
+  #status[data-estado="fim"]::before { background: var(--verde); }
+  #status[data-estado="erro"]::before { background: var(--erro); }
+  #status[data-estado="erro"] { color: var(--erro); }
+  .progresso { height: 4px; margin-top: 12px; border-radius: 99px; background: rgba(180, 184, 210, .14); overflow: hidden; }
+  .progresso span { display: block; height: 100%; width: 38%; border-radius: 99px; background: var(--grad); animation: corre 1.4s ease-in-out infinite; }
+  @keyframes corre { 0% { transform: translateX(-110%); } 100% { transform: translateX(290%); } }
+
+  .vazio { display: grid; gap: 6px; justify-items: center; text-align: center; padding: 26px 16px; color: var(--mutado); font-size: .9rem; }
+  .vazio strong { color: var(--texto); font-size: .98rem; }
+  .vazio svg { width: 44px; height: 44px; margin-bottom: 4px; opacity: .8; }
+
+  details.caixa summary { cursor: pointer; font-size: .86rem; font-weight: 600; color: var(--mutado); list-style-position: inside; }
+  pre {
+    white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; line-height: 1.45;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: .78rem; color: #d0d3df;
+  }
+
+  /* ---------- player e lives ---------- */
+  .card-topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 700; }
+  .ponto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--verde); margin-right: 8px; }
+  .ponto.off { background: #777b8d; }
+  .player { display: block; width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 10px; background: #000; }
+  .player-aviso { margin: 8px 0 0; font-size: .78rem; color: var(--mutado); }
+  #lives {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 80%); gap: 12px;
+    overflow-x: auto; padding: 2px 2px 12px; scroll-snap-type: x mandatory; scrollbar-width: thin;
+  }
+  .live-item { min-width: 0; padding: 10px; border: 1px solid var(--borda); border-radius: 12px; background: #0f1119; scroll-snap-align: start; }
+  .live-topo { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+  .live-nome { font-weight: 700; line-height: 1.35; }
+  .viewers { display: block; margin-top: 2px; font-weight: 500; font-size: .8rem; color: var(--mutado); }
+  .live-topo .btn-mini { width: 100%; }
   .placeholder {
-    width: 100%; aspect-ratio: 16/9; border-radius: 12px; background: #000;
-    border: 1px solid var(--borda); display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 8px; cursor: pointer;
-    color: var(--texto);
+    width: 100%; aspect-ratio: 16/9; border-radius: 10px; background: #000; color: var(--texto);
+    border: 1px solid var(--borda); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 8px; cursor: pointer;
   }
+  .placeholder:hover { border-color: var(--verde-2); }
   .placeholder .play {
-    width: 56px; height: 56px; border-radius: 50%; background: var(--kick-verde);
-    color: #0d0a16; display: flex; align-items: center; justify-content: center;
-    font-size: 1.4rem; padding-left: 4px;
+    width: 42px; height: 42px; border-radius: 50%; background: var(--verde); color: #0b0c12;
+    display: grid; place-items: center; font-size: 1rem; padding-left: 3px;
   }
   .placeholder small { color: var(--mutado); font-size: .78rem; }
-  .viewers { font-weight: 500; font-size: .8rem; color: var(--mutado); margin-left: 8px; }
-  .ponto.off { background: #6b6585; }
-  .btn-mini.off { background: #2a2540; color: var(--texto); }
-  .rodape { text-align: center; margin: 14px 0 0; }
-  .rodape a { color: var(--mutado); font-size: 0.78rem; text-decoration: underline; cursor: pointer; }
-  .modal-fundo { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: none; align-items: center; justify-content: center; padding: 16px; }
-  .modal { background: var(--surface); border: 1px solid var(--borda-forte); border-radius: 16px; max-width: 480px; width: 100%; max-height: 80vh; overflow-y: auto; padding: 18px; }
-  .modal h2 { margin: 0 0 10px; font-size: 1.1rem; }
-  .modal p { color: var(--mutado); font-size: 0.86rem; line-height: 1.5; margin: 8px 0; }
-  .modal .btn-mini { margin-top: 10px; width: 100%; }
-  .aviso { color: #7c7496; font-size: 0.78rem; text-align: center; margin: 18px 0 0; line-height: 1.45; }
-
-  /* lista de clipes, player e gerar mais */
-  .clipe-item { margin-top: 10px; background: var(--surface-2); border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; }
-  .clipe-topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .clipe-nome { font-weight: 700; font-size: 0.9rem; }
-  .clipe-tempo { font-size: 0.78rem; color: var(--mutado); margin-top: 2px; }
-  .clipe-acoes { display: flex; gap: 6px; }
-  .clipe-acoes a, .clipe-acoes button {
-    background: var(--kick-verde); color: #0d0a16; border: 0; border-radius: 10px;
-    padding: 7px 11px; font-weight: 700; font-size: .78rem; cursor: pointer; text-decoration: none;
+  @media (min-width: 700px) {
+    #lives { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); overflow: visible; scroll-snap-type: none; }
   }
-  .clipe-acoes button.sec { background: #2a2540; color: var(--texto); }
+
+  /* ---------- clipes ---------- */
+  .zip-link {
+    display: block; text-align: center; padding: 12px; border-radius: 10px; font-weight: 700; text-decoration: none;
+    background: rgba(88, 232, 121, .12); border: 1px solid var(--verde); color: var(--verde-2);
+  }
+  .clipe-item { margin-top: 10px; background: var(--surface-2); border: 1px solid var(--borda); border-radius: 12px; padding: 10px; }
+  .clipe-topo { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: center; }
+  .clipe-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: #000; display: block; }
+  .clipe-nome { font-weight: 700; font-size: .92rem; }
+  .clipe-tempo { font-size: .78rem; color: var(--mutado); margin-top: 2px; }
+  .clipe-acoes { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+  .clipe-acoes .btn-mini { flex: 1 1 auto; padding: 8px 10px; font-size: .78rem; }
   .clipe-video { width: 100%; max-height: 70vh; border-radius: 10px; background: #000; margin-top: 10px; }
-  .zip-link { display: block; text-align: center; padding: 12px; border-radius: 10px; font-weight: 700; text-decoration: none;
-    background: rgba(0,255,56,0.22); border: 1px solid var(--kick-brilho); color: var(--kick-brilho); }
+  @media (min-width: 520px) {
+    .clipe-topo { grid-template-columns: 72px minmax(0, 1fr) auto; }
+    .clipe-acoes { grid-column: auto; flex-wrap: nowrap; }
+    .clipe-acoes .btn-mini { flex: none; }
+  }
   .mais-box { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
   .mais-box select { flex: 1; }
-  .mais-box button { white-space: nowrap; }
-  button:focus-visible, a:focus-visible { outline: 2px solid var(--tt-azul); outline-offset: 2px; }
+  .mais-box .btn-mini { white-space: nowrap; min-height: 50px; }
 
+  /* ---------- rodapé, modal, aviso ---------- */
+  .aviso { color: #9298a9; font-size: .8rem; text-align: center; margin: 22px 0 0; line-height: 1.5; }
+  .rodape { text-align: center; margin: 8px 0 0; }
+  .link { background: none; border: 0; padding: 6px; color: var(--mutado); font-size: .8rem; text-decoration: underline; cursor: pointer; }
+  .modal-fundo { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); z-index: 50; display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal { background: var(--surface); border: 1px solid var(--borda-forte); border-radius: 16px; max-width: 480px; width: 100%; max-height: 80vh; overflow-y: auto; padding: 20px; }
+  .modal h2 { margin: 0 0 10px; font-size: 1.1rem; }
+  .modal p { color: var(--mutado); font-size: .88rem; line-height: 1.55; margin: 8px 0; }
+  .modal .btn-mini { margin-top: 12px; width: 100%; }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 60;
+    transform: translate(-50%, 16px); opacity: 0; pointer-events: none; max-width: 90vw;
+    background: #232637; border: 1px solid var(--borda-forte); border-radius: 99px;
+    padding: 10px 18px; font-size: .88rem; text-align: center; transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
 
-  /* ===== Redesign mobile: inspirado na referência enviada ===== */
-  :root {
-    --bg: #08090e;
-    --surface: #14141d;
-    --surface-2: #1b1b27;
-    --input: #171923;
-    --borda: rgba(180, 184, 210, .20);
-    --borda-forte: rgba(180, 184, 210, .30);
-    --kick-verde: #58e879;
-    --kick-brilho: #76f59a;
-    --texto: #f7f7fb;
-    --mutado: #aaaebe;
-    --tt-rosa: #ff3264;
-    --tt-azul: #29dce8;
-    --grad: linear-gradient(110deg, #27dfe5 0%, #34d9ca 45%, #ff3264 100%);
-  }
-  body {
-    background:
-      radial-gradient(ellipse at 10% 0%, rgba(44, 225, 151, .09), transparent 42%),
-      radial-gradient(ellipse at 95% 12%, rgba(255, 50, 100, .08), transparent 40%),
-      #08090e;
-  }
-  .topbar { background: rgba(8,9,14,.92); border: 0; }
-  .topbar-inner { max-width: 560px; padding: 20px 18px 10px; }
-  .brand { font-size: 1.55rem; letter-spacing: -.045em; line-height: 1.05; }
-  .logo-box { display:none; }
-  .brand span:last-child::after {
-    content: ' • de lives'; display: block; color: var(--kick-verde);
-    font-size: .88rem; letter-spacing: 0; margin-top: 3px;
-  }
-  .wrap { max-width: 560px; padding: 18px 16px 30px; }
-  .hero-card {
-    display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
-    column-gap: 12px; row-gap: 0; padding: 22px 18px;
-    border: 1px solid rgba(190,190,220,.25); border-radius: 17px;
-    background: linear-gradient(145deg, rgba(26,26,38,.98), rgba(17,17,26,.98));
-    box-shadow: 0 18px 48px rgba(0,0,0,.34);
-  }
-  .hero-titulo, .hero-sub, .hero-card > .campo:nth-of-type(1),
-  .hero-card > .campo:nth-of-type(2), .hero-card > .campo:nth-of-type(5),
-  .hero-card > .campo:nth-of-type(6), .hero-card > .btn-principal { grid-column: 1 / -1; }
-  .hero-titulo { font-size: clamp(1.7rem, 7vw, 2.2rem); line-height: 1.12; }
-  .hero-sub { color: #d1d2dc; font-size: .98rem; margin: 10px 0 18px; }
-  .campo { min-width: 0; margin-bottom: 13px; }
-  label { color: #f0f0f5; font-size: .88rem; margin-bottom: 8px; }
-  input, select {
-    border-radius: 11px; min-height: 50px; background-color: #151923;
-    border-color: rgba(118,245,154,.55); font-size: .95rem;
-  }
-  #formato { border-color: rgba(41,220,232,.7); }
-  .btn-principal {
-    min-height: 56px; margin-top: 3px; border-radius: 12px;
-    font-size: 1.02rem; box-shadow: 0 9px 24px rgba(255,50,100,.14);
-  }
-  .caixa, .card-live {
-    background: rgba(22,22,32,.96); border: 1px solid rgba(180,184,210,.22);
-    border-radius: 14px; padding: 15px 16px; margin-top: 14px;
-  }
-  #status { position: relative; padding-left: 38px; min-height: 54px; }
-  #status::before {
-    content: ''; position: absolute; left: 16px; top: 19px; width: 10px; height: 10px;
-    border-radius: 50%; background: var(--kick-verde); box-shadow: 0 0 12px rgba(88,232,121,.6);
-  }
-  .diag-topo { color: #f0f0f5; font-size: .84rem; }
-  pre { color: #d0d3df; }
-  #lives-box { overflow: hidden; }
-  #lives-box > .diag-topo { display:block; font-size: 1rem; margin-bottom: 12px; }
-  #lives {
-    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 78%);
-    grid-template-rows: auto; gap: 12px; overflow-x: auto; padding: 2px 2px 12px;
-    scroll-snap-type: x mandatory; scrollbar-width: thin;
-  }
-  .live-item {
-    min-width: 0; margin: 0; padding: 8px; border: 1px solid rgba(88,232,121,.42);
-    border-radius: 13px; background: #10131a; scroll-snap-align: start;
-  }
-  .live-topo { display:flex; flex-direction:column; align-items:stretch; gap:8px; margin: 0 0 8px; }
-  .live-topo > span { line-height: 1.35; }
-  .live-topo .btn-mini { width:100%; min-height: 38px; background: transparent; color: var(--kick-verde); border:1px solid var(--kick-verde); }
-  .placeholder, .player { border-radius: 9px; border: 1px solid rgba(88,232,121,.75); }
-  .placeholder { aspect-ratio: 16/9; }
-  .placeholder .play { width:42px; height:42px; font-size:1.1rem; }
-  .viewers { display:block; margin:4px 0 0; }
-  .ponto { width:9px; height:9px; background:var(--kick-verde); box-shadow:0 0 9px rgba(88,232,121,.6); }
-  .ponto.off { background:#777; box-shadow:none; }
-  .clipe-item { background:#171923; border-color:rgba(180,184,210,.2); }
-  .zip-link { background:rgba(88,232,121,.12); border-color:var(--kick-verde); color:var(--kick-brilho); }
-  .aviso { color:#9298a9; }
   @media (max-width: 390px) {
-    .hero-card { padding:19px 14px; column-gap:9px; }
-    .hero-titulo { font-size:1.65rem; }
-    input, select { padding:12px 10px; font-size:.88rem; }
-    #lives { grid-auto-columns: 86%; }
+    .hero-card { padding: 18px 14px; }
+    input, select { padding: 12px 10px; font-size: .9rem; }
+    #lives { grid-auto-columns: 88%; }
   }
-  @media (min-width: 700px) {
-    .wrap, .topbar-inner { max-width: 680px; }
-    #lives { grid-auto-columns: 245px; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { transition: none !important; }
+    .progresso span { animation: none; width: 100%; opacity: .5; }
   }
 </style>
 </head>
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="#">
-        <span class="logo-box">
+      <a class="brand" href="/" aria-label="Clipador de lives, página inicial">
+        <span class="logo-box" aria-hidden="true">
           <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M15 20H35L55 50L35 80H15L35 50L15 20Z" fill="#00ff38"/>
-            <path d="M45 20H65L85 50L65 80H45L65 50L45 20Z" fill="#00ff38" opacity="0.7"/>
+            <path d="M15 20H35L55 50L35 80H15L35 50L15 20Z" fill="#58e879"/>
+            <path d="M45 20H65L85 50L65 80H45L65 50L45 20Z" fill="#58e879" opacity="0.65"/>
           </svg>
         </span>
-        <span>Clipador de lives</span>
+        <span class="brand-nome">Clipador de lives<span class="brand-sub">para a Kick</span></span>
       </a>
     </div>
   </header>
 
   <main class="wrap">
-    <section class="hero-card">
-      <h1 class="hero-titulo">Transforme lives em clipes de 1 minuto</h1>
-      <p class="hero-sub">Cole o link da Kick e corte uma live <strong>ao vivo</strong> ou uma <strong>live antiga</strong> (com os melhores momentos). Baixe os cortes prontos em MP4 ou ZIP.</p>
+    <div class="layout">
+      <div class="col col-form">
+        <section class="hero-card">
+          <h1 class="hero-titulo">Transforme lives em clipes de 1 minuto</h1>
+          <p class="hero-sub">Cole o link da Kick e corte uma live <strong>ao vivo</strong> ou uma <strong>live antiga</strong> (com os melhores momentos). Baixe os cortes prontos em MP4 ou ZIP.</p>
 
-      <div class="campo">
-        <label for="url">Link da live</label>
-        <input id="url" type="url" placeholder="Cole o link da Kick...">
+          <div class="campo">
+            <label for="url">Link da live</label>
+            <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https://kick.com/nome-do-canal">
+          </div>
+
+          <div class="campo">
+            <label for="modo">O que você quer clipar?</label>
+            <select id="modo">
+              <option value="ao_vivo" selected>Live ao vivo</option>
+              <option value="vod">Live antiga (melhores momentos)</option>
+            </select>
+          </div>
+
+          <div class="campo" id="grupo-min">
+            <label for="min">Duração da captura</label>
+            <select id="min">
+              <option value="0.5">Gravar 30 segundos</option>
+              <option value="1">Gravar 1 minuto</option>
+              <option value="5">Gravar 5 minutos (teste)</option>
+              <option value="15">Gravar 15 minutos</option>
+              <option value="30">Gravar 30 minutos</option>
+              <option value="60">Gravar 60 minutos</option>
+            </select>
+          </div>
+
+          <div class="campo">
+            <label for="seg">Duração de cada clipe</label>
+            <select id="seg">
+              <option value="60" selected>1 minuto</option>
+              <option value="30">30 segundos</option>
+            </select>
+          </div>
+
+          <div class="campo">
+            <label for="formato">Formato do vídeo</label>
+            <div class="fmt-linha">
+              <select id="formato">
+                <option value="original" selected>Original (horizontal, mais rápido)</option>
+                <option value="vertical_blur">Vertical 9:16 com fundo desfocado</option>
+                <option value="vertical_crop">Vertical 9:16 com recorte central</option>
+              </select>
+              <div class="fmt-cel" id="fmt-cel" data-fmt="original" aria-hidden="true"><div class="fmt-prev"><i></i></div></div>
+            </div>
+            <p class="dica">Vertical reencoda o vídeo: na live ao vivo o servidor grava primeiro e converte clipe por clipe depois, então demora mais. No formato original o corte é feito no keyframe mais próximo, então o início pode variar alguns segundos.</p>
+          </div>
+
+          <div class="campo oculto" id="grupo-qtd">
+            <label for="qtd">Quantos clipes dos melhores momentos</label>
+            <select id="qtd">
+              <option value="3">3 clipes</option>
+              <option value="5" selected>5 clipes</option>
+              <option value="8">8 clipes</option>
+              <option value="10">10 clipes</option>
+            </select>
+            <p class="dica">Usa o link do canal (ou de uma live antiga). Pega a live mais recente e acha os picos do chat.</p>
+            <!--TESTE-->
+          </div>
+
+          <button id="btn-gravar" type="button" class="btn-principal">Cortar meu vídeo</button>
+        </section>
+
+        <section class="card-live oculto" id="card-live" aria-label="Prévia da live">
+          <div class="card-topo">
+            <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
+            <span id="plat-status">AO VIVO</span>
+          </div>
+          <iframe id="player" class="player" title="Prévia da live" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
+        </section>
       </div>
 
-      <div class="campo">
-        <label for="modo">O que você quer clipar?</label>
-        <select id="modo" onchange="trocarModo()">
-          <option value="ao_vivo" selected>Live ao vivo</option>
-          <option value="vod">Live antiga (melhores momentos)</option>
-        </select>
+      <div class="col col-res">
+        <div class="caixa">
+          <div id="status" role="status" aria-live="polite" data-estado="ocioso">Cole um link da Kick para começar.</div>
+          <div class="progresso oculto" id="progresso" role="progressbar" aria-label="Processando" aria-busy="true"><span></span></div>
+        </div>
+
+        <div class="caixa vazio" id="vazio">
+          <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="5" y="9" width="38" height="30" rx="6" stroke="#aeb2c2" stroke-width="2"/><path d="M20 18.5v11l9-5.5z" fill="#58e879"/></svg>
+          <strong>Seus clipes vão aparecer aqui</strong>
+          <span>Cole o link de uma live da Kick, escolha como cortar e toque em cortar.</span>
+        </div>
+
+        <div class="caixa oculto" id="lista"></div>
+
+        <div class="caixa oculto" id="mais">
+          <span class="titulo-caixa">Quer mais momentos dessa live?</span>
+          <div class="mais-box">
+            <select id="mais-qtd" aria-label="Quantidade de clipes extras">
+              <option value="3">Mais 3 clipes</option>
+              <option value="5" selected>Mais 5 clipes</option>
+              <option value="10">Mais 10 clipes</option>
+              <option value="15">Mais 15 clipes</option>
+            </select>
+            <button type="button" class="btn-mini" id="btn-mais">Gerar mais</button>
+          </div>
+          <p class="player-aviso" id="mais-aviso"></p>
+        </div>
+
+        <details class="caixa">
+          <summary>Detalhes técnicos</summary>
+          <pre id="diag">-</pre>
+        </details>
       </div>
-
-      <div class="campo" id="grupo-min">
-        <label for="min">Duração da captura</label>
-        <select id="min">
-          <option value="0.5">Gravar 30 segundos</option>
-          <option value="1">Gravar 1 minuto</option>
-          <option value="5">Gravar 5 minutos (teste)</option>
-          <option value="15">Gravar 15 minutos</option>
-          <option value="30">Gravar 30 minutos</option>
-          <option value="60">Gravar 60 minutos</option>
-        </select>
-      </div>
-
-      <div class="campo">
-        <label for="seg">Duração de cada clipe</label>
-        <select id="seg">
-          <option value="60" selected>1 minuto</option>
-          <option value="30">30 segundos</option>
-        </select>
-      </div>
-
-      <!-- formato do vídeo -->
-      <div class="campo">
-        <label for="formato">Formato do vídeo</label>
-        <select id="formato">
-          <option value="original" selected>Original (horizontal, mais rápido)</option>
-          <option value="vertical_blur">Vertical 9:16 com fundo desfocado</option>
-          <option value="vertical_crop">Vertical 9:16 com recorte central</option>
-        </select>
-        <p class="player-aviso">Vertical reencoda o vídeo: na live ao vivo o servidor grava primeiro e converte clipe por clipe depois, então demora mais pra ficar pronto. No formato original o corte é feito no keyframe mais próximo, então o início pode variar alguns segundos.</p>
-      </div>
-
-      <div class="campo" id="grupo-qtd" style="display:none">
-        <label for="qtd">Quantos clipes dos melhores momentos</label>
-        <select id="qtd">
-          <option value="3">3 clipes</option>
-          <option value="5" selected>5 clipes</option>
-          <option value="8">8 clipes</option>
-          <option value="10">10 clipes</option>
-        </select>
-        <p class="player-aviso">Usa o link do canal (ou de uma live antiga). Pega a live mais recente e acha os picos do chat.</p>
-        <button type="button" class="btn-mini" style="margin-top:8px" onclick="testarVod()">Testar se o servidor lê a Kick</button>
-      </div>
-
-      <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
-    </section>
-
-    <section class="card-live" id="card-live" style="display:none">
-      <div class="card-topo">
-        <span><span class="ponto"></span><span id="plat-nome">Live</span></span>
-        <span id="plat-status">AO VIVO</span>
-      </div>
-      <iframe id="player" class="player" title="Prévia da live" allowfullscreen allow="autoplay; fullscreen"></iframe>
-      <p class="player-aviso" id="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
-    </section>
-
-    <div class="caixa" id="status" role="status" aria-live="polite">Aguardando link.</div>
-    <div class="caixa" id="lista" style="display:none"></div>
-
-    <!-- gerar mais clipes -->
-    <div class="caixa" id="mais" style="display:none">
-      <span class="diag-topo">Quer mais momentos dessa live?</span>
-      <div class="mais-box">
-        <select id="mais-qtd">
-          <option value="3">Mais 3 clipes</option>
-          <option value="5" selected>Mais 5 clipes</option>
-          <option value="10">Mais 10 clipes</option>
-          <option value="15">Mais 15 clipes</option>
-        </select>
-        <button type="button" class="btn-mini" id="btn-mais" onclick="maisClipes()">Gerar mais</button>
-      </div>
-      <p class="player-aviso" id="mais-aviso"></p>
     </div>
 
-    <div class="caixa">
-      <span class="diag-topo">Diagnóstico</span>
-      <pre id="diag">-</pre>
-    </div>
-
-    <section class="caixa" id="lives-box">
-      <span class="diag-topo">Lives agora na Kick</span>
+    <section class="caixa lives-box" id="lives-box" aria-label="Lives agora na Kick">
+      <span class="titulo-caixa">Lives agora na Kick</span>
       <div id="lives"></div>
     </section>
 
-    <p class="aviso">Usa apenas com autorização do streamer ou nas tuas próprias lives.</p>
-    <p class="rodape"><a href="#" onclick="abrirTermos(); return false;">Termos de uso</a></p>
+    <p class="aviso">Use apenas com autorização do streamer ou nas suas próprias lives.</p>
+    <p class="rodape"><button type="button" class="link" id="abrir-termos">Termos de uso</button></p>
   </main>
 
-  <div class="modal-fundo" id="termos" role="dialog" aria-modal="true" aria-labelledby="termos-titulo" onclick="if(event.target===this){fecharTermos()}">
+  <div class="modal-fundo" id="termos" role="dialog" aria-modal="true" aria-labelledby="termos-titulo">
     <div class="modal">
       <h2 id="termos-titulo">Termos de uso</h2>
       <p>1. Use o Clipador de lives apenas com autorização do streamer ou em transmissões suas.</p>
@@ -512,107 +524,180 @@ HTML = r"""
       <p>6. Os arquivos ficam no servidor só por um tempo e podem ser apagados a qualquer momento. Baixe o que quiser guardar.</p>
       <p>7. O serviço é oferecido como está, sem garantia de funcionamento ou disponibilidade.</p>
       <p>8. Se o dono de um conteúdo pedir a remoção, o pedido será atendido.<!--CONTATO--></p>
-      <button class="btn-mini" onclick="fecharTermos()">Fechar</button>
+      <button type="button" class="btn-mini" id="fechar-termos">Fechar</button>
     </div>
   </div>
 
-<script>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script nonce="__NONCE__">
+(function () {
+'use strict';
+
+const $ = function (id) { return document.getElementById(id); };
+const CANAIS = /*__CANAIS__*/ [];
+const RE_SLUG = /^[A-Za-z0-9_-]{1,40}$/;
+
 let job = null;
 let timerChecar = null;
+let assinaturaLives = '';
+const tocando = new Set();
+const estadoCanal = {};   // canal -> 'online' | 'offline' | 'incerto'
 
+// ---------- utilidades ----------
+function el(tag, classe, texto) {
+  const e = document.createElement(tag);
+  if (classe) { e.className = classe; }
+  if (texto !== undefined) { e.textContent = texto; }
+  return e;
+}
+
+let timerToast = null;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(timerToast);
+  timerToast = setTimeout(function () { t.classList.remove('on'); }, 3200);
+}
+
+function definirStatus(msg, estado) {
+  const s = $('status');
+  s.textContent = msg || '';
+  s.dataset.estado = estado || 'ocioso';
+}
+
+function progresso(ligado) {
+  $('progresso').style.display = ligado ? 'block' : 'none';
+}
+
+function msgHttp(codigo) {
+  if (codigo === 429) { return 'Muitas requisições seguidas. Espere alguns segundos e tente de novo.'; }
+  if (codigo === 413) { return 'Pedido grande demais.'; }
+  if (codigo >= 500) { return 'O servidor está com problema. Tente de novo daqui a pouco.'; }
+  return 'Não deu certo (erro ' + codigo + ').';
+}
+
+async function pedir(url, opcoes) {
+  let r;
+  try {
+    r = await fetch(url, opcoes);
+  } catch (e) {
+    return {ok: false, status: 0, data: {erro: 'Sem conexão com o servidor. Confira sua internet e tente de novo.'}};
+  }
+  let data = {};
+  try { data = await r.json(); } catch (e) { data = {}; }
+  if (!r.ok && !data.erro) { data.erro = msgHttp(r.status); }
+  return {ok: r.ok, status: r.status, data: data};
+}
+
+function postar(url, corpo) {
+  return pedir(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(corpo)
+  });
+}
+
+// ---------- termos ----------
+let focoAntes = null;
+function abrirTermos() {
+  focoAntes = document.activeElement;
+  $('termos').style.display = 'flex';
+  $('fechar-termos').focus();
+}
+function fecharTermos() {
+  $('termos').style.display = 'none';
+  if (focoAntes && focoAntes.focus) { focoAntes.focus(); }
+}
+document.addEventListener('keydown', function (e) {
+  const aberto = $('termos').style.display === 'flex';
+  if (e.key === 'Escape' && aberto) { fecharTermos(); }
+  if (e.key === 'Tab' && aberto) { e.preventDefault(); $('fechar-termos').focus(); }
+});
+$('abrir-termos').addEventListener('click', abrirTermos);
+$('fechar-termos').addEventListener('click', fecharTermos);
+$('termos').addEventListener('click', function (e) { if (e.target === this) { fecharTermos(); } });
+
+// ---------- prévia do link colado ----------
 function plataforma(url) {
   try {
     const u = new URL(url);
-    const host = u.hostname.replace('www.', '');
+    const host = u.hostname.replace(/^www\./, '');
     const partes = u.pathname.split('/').filter(Boolean);
-    if ((host === 'kick.com' || host === 'kzl.ink') && partes[0]) {
-      return {nome: 'Kick', embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
+    if (host === 'kick.com' && partes[0] && RE_SLUG.test(partes[0])) {
+      return {nome: 'Kick', canal: partes[0], embed: 'https://player.kick.com/' + partes[0] + '?autoplay=true'};
     }
   } catch (e) {}
   return null;
 }
 
-const estadoCanal = {};  // canal -> 'online' | 'offline' | 'incerto'
-
-function abrirTermos() {
-  document.getElementById('termos').style.display = 'flex';
-  document.querySelector('#termos .btn-mini').focus();
-}
-function fecharTermos() { document.getElementById('termos').style.display = 'none'; }
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { fecharTermos(); } });
-
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, function (c) {
-    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
-  });
-}
-
 function atualizarStatusPreview() {
-  const p = plataforma(document.getElementById('url').value.trim());
-  const txt = document.getElementById('plat-status');
+  const p = plataforma($('url').value.trim());
+  const txt = $('plat-status');
   const ponto = document.querySelector('#card-live .ponto');
   if (!txt || !ponto) { return; }
-  let canal = '';
-  if (p) {
-    try { canal = new URL(document.getElementById('url').value.trim()).pathname.split('/').filter(Boolean)[0] || ''; } catch (e) {}
-  }
-  const off = estadoCanal[canal] === 'offline';
-  txt.innerText = off ? 'OFFLINE' : 'AO VIVO';
-  if (off) { ponto.classList.add('off'); } else { ponto.classList.remove('off'); }
+  const off = !!p && estadoCanal[p.canal] === 'offline';
+  txt.textContent = off ? 'OFFLINE' : 'AO VIVO';
+  ponto.classList.toggle('off', off);
 }
 
 let ultimoEmbed = '';
 function mostrarPreview() {
-  const p = plataforma(document.getElementById('url').value.trim());
-  const card = document.getElementById('card-live');
+  const p = plataforma($('url').value.trim());
+  const card = $('card-live');
   if (!p) {
     card.style.display = 'none';
-    document.getElementById('player').src = 'about:blank';
+    $('player').src = 'about:blank';
     ultimoEmbed = '';
     return;
   }
   card.style.display = 'block';
-  document.getElementById('plat-nome').innerText = p.nome;
-  const playerEl = document.getElementById('player');
-  const avisoEl = document.getElementById('player-aviso');
-  playerEl.style.display = '';
-  avisoEl.innerText = 'Se o vídeo não aparecer, a gravação ainda pode funcionar.';
+  $('plat-nome').textContent = p.nome;
   if (p.embed !== ultimoEmbed) {
-    document.getElementById('player').src = p.embed;
+    $('player').src = p.embed;
     ultimoEmbed = p.embed;
   }
   atualizarStatusPreview();
 }
-document.getElementById('url').addEventListener('input', mostrarPreview);
+$('url').addEventListener('input', mostrarPreview);
+$('url').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !$('btn-gravar').disabled) { e.preventDefault(); iniciar(); }
+});
 
-const CANAIS = /*__CANAIS__*/ [];
+// ---------- lives agora ----------
+function embedDe(c) { return 'https://player.kick.com/' + c.canal + '?autoplay=true'; }
+function linkDe(c) { return 'https://kick.com/' + c.canal; }
 
-function embedDe(c) {
-  return 'https://player.kick.com/' + c.canal + '?autoplay=true';
+function criarPlayer(c) {
+  const f = document.createElement('iframe');
+  f.className = 'player';
+  f.title = 'Live de ' + c.nome;
+  f.allow = 'autoplay; fullscreen';
+  f.allowFullscreen = true;
+  f.referrerPolicy = 'strict-origin-when-cross-origin';
+  f.src = embedDe(c);
+  return f;
 }
 
-function linkDe(c) {
-  return 'https://kick.com/' + c.canal;
+function canalPorSlug(slug) {
+  return CANAIS.find(function (x) { return x.canal === slug; });
 }
 
-function clipar(i) {
-  document.getElementById('url').value = linkDe(CANAIS[i]);
+function clipar(slug) {
+  const c = canalPorSlug(slug);
+  if (!c) { return; }
+  $('url').value = linkDe(c);
   mostrarPreview();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
-let assinaturaLives = '';
-const tocando = new Set();
-
-function playerHtml(c) {
-  return '<iframe class="player" title="Live ao vivo" src="' + embedDe(c) + '" allowfullscreen allow="autoplay; fullscreen"></iframe>';
-}
-
-function tocar(canal) {
-  tocando.add(canal);
-  const el = document.getElementById('slot-' + canal);
-  const c = CANAIS.find(function (x) { return x.canal === canal; });
-  if (el && c) { el.innerHTML = playerHtml(c); }
+function tocar(slug) {
+  const c = canalPorSlug(slug);
+  const slot = $('slot-' + slug);
+  if (!c || !slot) { return; }
+  tocando.add(slug);
+  slot.replaceChildren(criarPlayer(c));
 }
 
 function montarLives(lista) {
@@ -622,127 +707,136 @@ function montarLives(lista) {
   assinaturaLives = assinatura;
 
   const temPublico = lista.length > 0 && lista[0].viewers !== null && !lista[0].offline;
-  let h = '';
+  const itens = [];
   lista.forEach(function (c, pos) {
-    const idx = CANAIS.findIndex(function (item) { return item.canal === c.canal; });
-    if (c.offline) {
-      h += '<div class="live-item"><div class="live-topo"><span><span class="ponto off"></span>' + esc(c.nome) +
-        '<span class="viewers">Offline</span></span>' +
-        '<button class="btn-mini off" onclick="clipar(' + idx + ')">Usar última live</button></div></div>';
-      return;
+    const item = el('div', 'live-item');
+    const topo = el('div', 'live-topo');
+    const nome = el('span', 'live-nome');
+    nome.appendChild(el('span', 'ponto' + (c.offline ? ' off' : '')));
+    nome.appendChild(document.createTextNode(c.nome));
+    const detalhe = c.offline ? 'Offline'
+      : (c.viewers !== null ? c.viewers.toLocaleString('pt-BR') + ' assistindo' : '');
+    if (detalhe) { nome.appendChild(el('span', 'viewers', detalhe)); }
+    topo.appendChild(nome);
+
+    const btn = el('button', 'btn-mini sec' + (c.offline ? ' off' : ''), c.offline ? 'Usar última live' : 'Usar esta live');
+    btn.type = 'button';
+    btn.addEventListener('click', function () { clipar(c.canal); });
+    topo.appendChild(btn);
+    item.appendChild(topo);
+
+    if (!c.offline) {
+      const slot = el('div');
+      slot.id = 'slot-' + c.canal;
+      const rodando = (temPublico && pos === 0) || tocando.has(c.canal);
+      if (rodando) {
+        slot.appendChild(criarPlayer(c));
+      } else {
+        const ph = el('button', 'placeholder');
+        ph.type = 'button';
+        ph.setAttribute('aria-label', 'Assistir à live de ' + c.nome);
+        ph.appendChild(el('span', 'play', '▶'));
+        ph.appendChild(el('small', '', 'Clique para assistir'));
+        ph.addEventListener('click', function () { tocar(c.canal); });
+        slot.appendChild(ph);
+      }
+      item.appendChild(slot);
     }
-    const autoplay = temPublico && pos === 0;
-    const rodando = autoplay || tocando.has(c.canal);
-    const info = c.viewers !== null ? '<span class="viewers">' + c.viewers.toLocaleString('pt-BR') + ' assistindo</span>' : '';
-    const corpo = rodando
-      ? playerHtml(c)
-      : '<div class="placeholder" data-canal="' + c.canal + '" onclick="tocar(this.dataset.canal)"><div class="play">▶</div><small>Clique para assistir</small></div>';
-    h += '<div class="live-item"><div class="live-topo"><span><span class="ponto"></span>' + esc(c.nome) + info +
-      '</span><button class="btn-mini" onclick="clipar(' + idx + ')">Usar esta live</button></div>' +
-      '<div id="slot-' + c.canal + '">' + corpo + '</div></div>';
+    itens.push(item);
   });
-  document.getElementById('lives').innerHTML = h;
+  $('lives').replaceChildren.apply($('lives'), itens);
 }
-montarLives(CANAIS.map(function (c) { return {canal: c.canal, nome: c.nome, viewers: null}; }));
+montarLives(CANAIS.map(function (c) { return {canal: c.canal, nome: c.nome, viewers: null, offline: false}; }));
 
 async function filtrarOnline() {
   if (document.hidden) { return; }
-  try {
-    const r = await fetch('/api/lives');
-    if (!r.ok) { return; }
-    const dados = await r.json();
-    const resultados = dados.canais || [];
+  const res = await pedir('/api/lives');
+  if (!res.ok) { return; }
+  const resultados = res.data.canais || [];
+  resultados.forEach(function (x) { estadoCanal[x.canal] = x.status; });
+  atualizarStatusPreview();
 
-    resultados.forEach(function (x) { estadoCanal[x.canal] = x.status; });
-    atualizarStatusPreview();
-
-    const online = resultados.filter(function (x) { return x.status === 'online'; });
-    const offlineLista = resultados.filter(function (x) { return x.status === 'offline'; });
-
-    if (online.length > 0 || offlineLista.length > 0) {
-      online.sort(function (a, b) { return (b.viewers || 0) - (a.viewers || 0); });
-      montarLives(online.concat(offlineLista).map(function (x) {
-        return {canal: x.canal, nome: x.nome, viewers: x.viewers, offline: x.status === 'offline'};
-      }));
-    }
-  } catch (e) {}
+  const online = resultados.filter(function (x) { return x.status === 'online'; });
+  const offline = resultados.filter(function (x) { return x.status === 'offline'; });
+  if (online.length > 0 || offline.length > 0) {
+    online.sort(function (a, b) { return (b.viewers || 0) - (a.viewers || 0); });
+    montarLives(online.concat(offline).map(function (x) {
+      return {canal: x.canal, nome: x.nome, viewers: x.viewers, offline: x.status === 'offline'};
+    }));
+  }
 }
 filtrarOnline();
 setInterval(filtrarOnline, 30000);
 document.addEventListener('visibilitychange', function () { if (!document.hidden) { filtrarOnline(); } });
 
-
+// ---------- formulário ----------
 function trocarModo() {
-  const vod = document.getElementById('modo').value === 'vod';
-  document.getElementById('grupo-qtd').style.display = vod ? 'block' : 'none';
-  document.getElementById('grupo-min').style.display = vod ? 'none' : 'block';
-  document.getElementById('btn-gravar').innerText = vod ? 'Achar melhores momentos' : 'Cortar meu vídeo';
+  const vod = $('modo').value === 'vod';
+  $('grupo-qtd').style.display = vod ? 'block' : 'none';
+  $('grupo-min').style.display = vod ? 'none' : 'block';
+  $('btn-gravar').textContent = vod ? 'Achar melhores momentos' : 'Cortar meu vídeo';
 }
+$('modo').addEventListener('change', trocarModo);
+$('formato').addEventListener('change', function () { $('fmt-cel').dataset.fmt = this.value; });
 
 async function testarVod() {
-  const url = document.getElementById('url').value.trim();
+  const url = $('url').value.trim();
   let canal = 'bak';
   try {
     const partes = new URL(url).pathname.split('/').filter(Boolean);
-    if (partes[0]) { canal = partes[0]; }
+    if (partes[0] && RE_SLUG.test(partes[0])) { canal = partes[0]; }
   } catch (e) {}
-  document.getElementById('status').innerText = 'Testando a leitura da Kick...';
-  try {
-    const r = await fetch('/api/vod/teste?canal=' + encodeURIComponent(canal));
-    const d = await r.json();
-    if (!r.ok) {
-      document.getElementById('status').innerText = d.erro || 'Erro ao testar.';
-      return;
-    }
-    document.getElementById('diag').innerText = JSON.stringify(d, null, 2);
-    const ok = d.lista_vods && d.lista_vods.ok && d.chat && d.chat.ok;
-    document.getElementById('status').innerText = ok
-      ? 'Funcionou: o servidor lê as lives antigas e o chat.'
-      : 'Não deu: veja o diagnóstico abaixo.';
-  } catch (e) {
-    document.getElementById('status').innerText = 'Erro ao testar.';
-  }
+  definirStatus('Testando a leitura da Kick...', 'trabalhando');
+  const res = await pedir('/api/vod/teste?canal=' + encodeURIComponent(canal));
+  if (!res.ok) { definirStatus(res.data.erro || 'Erro ao testar.', 'erro'); return; }
+  const d = res.data;
+  $('diag').textContent = JSON.stringify(d, null, 2);
+  const ok = d.lista_vods && d.lista_vods.ok && d.chat && d.chat.ok;
+  definirStatus(ok ? 'Funcionou: o servidor lê as lives antigas e o chat.'
+                   : 'Não deu: veja os detalhes técnicos abaixo.', ok ? 'fim' : 'erro');
+}
+const btnTestar = $('btn-testar');
+if (btnTestar) { btnTestar.addEventListener('click', testarVod); }
+
+function resetarResultados() {
+  const lista = $('lista');
+  lista.dataset.job = '';
+  lista.style.display = 'none';
+  lista.replaceChildren();
+  $('mais').style.display = 'none';
+  $('vazio').style.display = '';
 }
 
-// envia o formato e zera a lista e o bloco de mais clipes
 async function iniciar() {
-  const url = document.getElementById('url').value.trim();
-  const min = document.getElementById('min').value;
-  const seg = document.getElementById('seg').value;
-  const formato = document.getElementById('formato').value;
-  const btn = document.getElementById('btn-gravar');
-  if (!url) { return; }
+  const url = $('url').value.trim();
+  const btn = $('btn-gravar');
+  if (!url) {
+    definirStatus('Cole o link da Kick primeiro.', 'erro');
+    $('url').focus();
+    return;
+  }
   btn.disabled = true;
   clearTimeout(timerChecar);
-  document.getElementById('lista').dataset.job = '';
-  document.getElementById('lista').style.display = 'none';
-  document.getElementById('lista').innerHTML = '';
-  document.getElementById('mais').style.display = 'none';
-  document.getElementById('status').innerText = 'Iniciando...';
-  try {
-    const vod = document.getElementById('modo').value === 'vod';
-    const r = await fetch(vod ? '/iniciar_vod' : '/iniciar', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(vod
-        ? {url: url, seg: seg, qtd: document.getElementById('qtd').value, formato: formato}
-        : {url: url, min: min, seg: seg, formato: formato})
-    });
-    const d = await r.json();
-    if (!r.ok || !d.id) {
-      document.getElementById('status').innerText = d.erro || 'Link inválido.';
-      btn.disabled = false;
-      return;
-    }
-    job = d.id;
-    checar();
-  } catch (e) {
-    document.getElementById('status').innerText = 'Erro ao iniciar.';
-    btn.disabled = false;
-  }
-}
+  resetarResultados();
+  definirStatus('Iniciando...', 'trabalhando');
+  progresso(true);
 
-// H:MM:SS no navegador
+  const vod = $('modo').value === 'vod';
+  const base = {url: url, seg: $('seg').value, formato: $('formato').value};
+  const corpo = vod ? Object.assign(base, {qtd: $('qtd').value}) : Object.assign(base, {min: $('min').value});
+  const res = await postar(vod ? '/iniciar_vod' : '/iniciar', corpo);
+  if (!res.ok || !res.data.id) {
+    definirStatus(res.data.erro || 'Link inválido.', 'erro');
+    progresso(false);
+    btn.disabled = false;
+    return;
+  }
+  job = res.data.id;
+  checar();
+}
+$('btn-gravar').addEventListener('click', iniciar);
+
+// ---------- lista de clipes ----------
 function fmtTempo(s) {
   s = Math.max(0, Math.floor(s));
   const h = Math.floor(s / 3600);
@@ -753,125 +847,173 @@ function fmtTempo(s) {
   return h > 0 ? h + ':' + mm + ':' + ss : m + ':' + ss;
 }
 
-// lista incremental: só acrescenta clipes novos, sem apagar o vídeo que a pessoa está assistindo
-function criarItemClipe(i, jobId) {
-  const el = document.createElement('div');
-  el.className = 'clipe-item';
-  el.id = 'clipe-' + i;
-  el.innerHTML =
-    '<div class="clipe-topo"><div><div class="clipe-nome">Clipe ' + i + '</div>' +
-    '<div class="clipe-tempo"></div></div>' +
-    '<div class="clipe-acoes">' +
-    '<button type="button" class="sec" onclick="assistir(' + i + ')">Assistir</button>' +
-    '<a href="/clipe/' + jobId + '/' + i + '">Baixar</a>' +
-    '</div></div><div id="video-' + i + '"></div>';
-  return el;
+async function copiarLink(jobId, n) {
+  const link = location.origin + '/ver/' + jobId + '/' + n;
+  try {
+    await navigator.clipboard.writeText(link);
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = link;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e2) {}
+    document.body.removeChild(ta);
+    if (!ok) { toast('Não consegui copiar. Use o botão Baixar.'); return; }
+  }
+  toast('Link copiado. Vale enquanto o arquivo estiver no servidor.');
 }
 
+function assistir(jobId, n) {
+  const alvo = $('video-' + n);
+  if (!alvo) { return; }
+  if (alvo.firstChild) { alvo.replaceChildren(); return; }
+  const v = el('video', 'clipe-video');
+  v.controls = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.src = '/ver/' + jobId + '/' + n;
+  alvo.appendChild(v);
+}
+
+function criarItemClipe(i, jobId) {
+  const item = el('div', 'clipe-item');
+  item.id = 'clipe-' + i;
+
+  const topo = el('div', 'clipe-topo');
+  const img = el('img', 'clipe-thumb');
+  img.alt = '';
+  img.width = 72;
+  img.height = 72;
+  img.loading = 'lazy';
+  img.addEventListener('error', function () { img.style.visibility = 'hidden'; });
+  img.src = '/thumb/' + jobId + '/' + i;
+  topo.appendChild(img);
+
+  const meta = el('div');
+  meta.appendChild(el('div', 'clipe-nome', 'Clipe ' + i));
+  meta.appendChild(el('div', 'clipe-tempo'));
+  topo.appendChild(meta);
+
+  const acoes = el('div', 'clipe-acoes');
+  const bAssistir = el('button', 'btn-mini sec', 'Assistir');
+  bAssistir.type = 'button';
+  bAssistir.addEventListener('click', function () { assistir(jobId, i); });
+  const bCopiar = el('button', 'btn-mini sec', 'Copiar link');
+  bCopiar.type = 'button';
+  bCopiar.addEventListener('click', function () { copiarLink(jobId, i); });
+  const aBaixar = el('a', 'btn-mini', 'Baixar');
+  aBaixar.href = '/clipe/' + jobId + '/' + i;
+  aBaixar.setAttribute('download', '');
+  acoes.appendChild(bAssistir);
+  acoes.appendChild(bCopiar);
+  acoes.appendChild(aBaixar);
+  topo.appendChild(acoes);
+
+  item.appendChild(topo);
+  const video = el('div');
+  video.id = 'video-' + i;
+  item.appendChild(video);
+  return item;
+}
+
+// lista incremental: só acrescenta clipes novos, sem apagar o vídeo que a pessoa está assistindo
 function atualizarListaClipes(clipesQtd, jobId, info) {
-  const lista = document.getElementById('lista');
+  const lista = $('lista');
   if (clipesQtd <= 0) {
     lista.style.display = 'none';
+    $('vazio').style.display = '';
     return;
   }
   lista.style.display = 'block';
+  $('vazio').style.display = 'none';
   if (lista.dataset.job !== jobId) {
-    lista.innerHTML = '<a class="zip-link" id="zip-link"></a><div id="clipes-itens"></div>';
+    const zip = el('a', 'zip-link');
+    zip.id = 'zip-link';
+    const itens = el('div');
+    itens.id = 'clipes-itens';
+    lista.replaceChildren(zip, itens);
     lista.dataset.job = jobId;
   }
-  const zip = document.getElementById('zip-link');
+  const zip = $('zip-link');
   zip.href = '/zip/' + jobId;
   zip.textContent = 'Baixar todos em ZIP (' + clipesQtd + ' clipes)';
 
-  const itens = document.getElementById('clipes-itens');
+  const itens = $('clipes-itens');
   const porNumero = {};
   (info || []).forEach(function (x) { porNumero[x.n] = x; });
 
   for (let i = 1; i <= clipesQtd; i++) {
-    let el = document.getElementById('clipe-' + i);
-    if (!el) {
-      el = criarItemClipe(i, jobId);
-      itens.appendChild(el);
+    let item = $('clipe-' + i);
+    if (!item) {
+      item = criarItemClipe(i, jobId);
+      itens.appendChild(item);
     }
     const x = porNumero[i];
     if (x) {
-      el.querySelector('.clipe-tempo').textContent =
+      item.querySelector('.clipe-tempo').textContent =
         fmtTempo(x.ini) + ' até ' + fmtTempo(x.fim) + ' da live · ' + x.msgs + ' msgs no chat';
     }
   }
 }
 
-// pré-visualização do clipe na própria página
-function assistir(n) {
-  const alvo = document.getElementById('video-' + n);
-  if (!alvo || !job) { return; }
-  if (alvo.innerHTML) {
-    alvo.innerHTML = '';
-    return;
-  }
-  alvo.innerHTML = '<video class="clipe-video" controls autoplay playsinline src="/ver/' + job + '/' + n + '"></video>';
-}
-
-// mostra o bloco de gerar mais quando termina
+// ---------- acompanhamento do job ----------
 async function checar() {
   if (!job) { return; }
   const meuJob = job;
-  try {
-    const r = await fetch('/status/' + meuJob);
-    const d = await r.json();
-    if (meuJob !== job) { return; }  // a pessoa iniciou outra tarefa enquanto isso
-    document.getElementById('status').innerText = d.msg || '';
-    document.getElementById('diag').innerText = d.diag || '-';
-    atualizarListaClipes(Number(d.clipes || 0), meuJob, d.info || []);
+  const res = await pedir('/status/' + encodeURIComponent(meuJob));
+  if (meuJob !== job) { return; }   // a pessoa iniciou outra tarefa enquanto isso
+  if (!res.ok) {                    // rede, limite ou servidor: tenta de novo
+    timerChecar = setTimeout(checar, res.status === 429 ? 6000 : 4000);
+    return;
+  }
+  const d = res.data;
+  const terminou = d.estado === 'fim' || d.estado === 'erro';
+  definirStatus(d.msg || '', terminou ? d.estado : 'trabalhando');
+  progresso(!terminou);
+  $('diag').textContent = d.diag || '-';
+  atualizarListaClipes(Number(d.clipes || 0), meuJob, d.info || []);
 
-    const terminou = d.estado === 'fim' || d.estado === 'erro';
-    const maisBox = document.getElementById('mais');
-    const temMais = (d.restantes || 0) > 0;
-    if (d.estado === 'fim' && temMais) {
-      maisBox.style.display = 'block';
-      document.getElementById('mais-aviso').innerText =
-        'Ainda restam ' + d.restantes + ' momentos de destaque nessa live.';
-    } else {
-      maisBox.style.display = 'none';
-    }
+  const temMais = (d.restantes || 0) > 0;
+  if (d.estado === 'fim' && temMais) {
+    $('mais').style.display = 'block';
+    $('mais-aviso').textContent = 'Ainda restam ' + d.restantes + ' momentos de destaque nessa live.';
+  } else {
+    $('mais').style.display = 'none';
+  }
 
-    if (!terminou) {
-      timerChecar = setTimeout(checar, 3000);
-    } else {
-      document.getElementById('btn-gravar').disabled = false;
-      document.getElementById('btn-mais').disabled = false;
-    }
-  } catch (e) {
-    if (meuJob === job) { timerChecar = setTimeout(checar, 3000); }
+  if (!terminou) {
+    timerChecar = setTimeout(checar, 3000);
+  } else {
+    $('btn-gravar').disabled = false;
+    $('btn-mais').disabled = false;
   }
 }
 
-// pede mais clipes do mesmo job
 async function maisClipes() {
   if (!job) { return; }
-  const btn = document.getElementById('btn-mais');
+  const btn = $('btn-mais');
   btn.disabled = true;
-  try {
-    const r = await fetch('/mais_clipes/' + job, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({qtd: document.getElementById('mais-qtd').value})
-    });
-    const d = await r.json();
-    if (!r.ok) {
-      document.getElementById('mais-aviso').innerText = d.erro || 'Não deu pra gerar mais.';
-      btn.disabled = false;
-      return;
-    }
-    document.getElementById('mais').style.display = 'none';
-    document.getElementById('btn-gravar').disabled = true;
-    clearTimeout(timerChecar);
-    checar();
-  } catch (e) {
-    document.getElementById('mais-aviso').innerText = 'Erro ao pedir mais clipes.';
+  const res = await postar('/mais_clipes/' + encodeURIComponent(job), {qtd: $('mais-qtd').value});
+  if (!res.ok) {
+    $('mais-aviso').textContent = res.data.erro || 'Não deu pra gerar mais.';
     btn.disabled = false;
+    return;
   }
+  $('mais').style.display = 'none';
+  $('btn-gravar').disabled = true;
+  definirStatus('Cortando mais clipes...', 'trabalhando');
+  progresso(true);
+  clearTimeout(timerChecar);
+  checar();
 }
+$('btn-mais').addEventListener('click', maisClipes);
+
+trocarModo();
+})();
 </script>
 </body>
 </html>
@@ -886,6 +1028,9 @@ def _montar_pagina():
     if CONTATO:
         c = escape(CONTATO, quote=True)
         contato = ' Contato: <a href="mailto:%s">%s</a>.' % (c, c)
+    teste = ('<button type="button" class="btn-mini sec" id="btn-testar">'
+             'Testar se o servidor lê a Kick</button>') if TESTE_ATIVO else ""
+    html = html.replace("<!--TESTE-->", teste)
     return html.replace("<!--CONTATO-->", contato)
 
 
@@ -896,9 +1041,31 @@ JOBS_LOCK = threading.Lock()
 VAGAS = threading.BoundedSemaphore(MAX_SIMULTANEOS)
 
 
+# CSP da página: scripts e estilos só com o nonce desta resposta; único site externo permitido é o player da Kick.
+CSP_PAGINA = ("default-src 'self'; script-src 'nonce-{n}'; style-src 'nonce-{n}'; img-src 'self' data:; "
+              "media-src 'self'; connect-src 'self'; frame-src https://player.kick.com; "
+              "object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+
+
 @app.after_request
 def cabecalhos(resp):
-    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+    h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    nonce = getattr(g, "nonce", None)
+    if nonce:
+        h["Content-Security-Policy"] = CSP_PAGINA.replace("{n}", nonce)
+    else:
+        h.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+    if request.is_secure:
+        h.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if request.path.startswith(("/clipe/", "/ver/", "/thumb/")):
+        h["Cache-Control"] = "private, no-cache"   # arquivos: o navegador revalida (e o seek do vídeo continua funcionando)
+    else:
+        h["Cache-Control"] = "no-store"
     return resp
 
 
@@ -1007,16 +1174,145 @@ def ip_cliente():
     return request.remote_addr or "?"
 
 
+# ---------- limite de requisições por visitante (em memória; o app roda com 1 worker) ----------
+_LIMITES = {}
+_LIMITES_LOCK = threading.Lock()
+
+
+def _segundos_de_espera(chave, maximo, janela_s):
+    """0 se pode seguir; senão, quantos segundos faltam para liberar. Janela fixa, barata e suficiente aqui."""
+    agora = time.time()
+    with _LIMITES_LOCK:
+        if len(_LIMITES) > 20000:  # não deixa o dicionário crescer sem fim
+            for k in [k for k, v in _LIMITES.items() if agora - v[0] >= v[2]]:
+                del _LIMITES[k]
+        ini, qtd, _ = _LIMITES.get(chave, (agora, 0, janela_s))
+        if agora - ini >= janela_s:
+            ini, qtd = agora, 0
+        qtd += 1
+        _LIMITES[chave] = (ini, qtd, janela_s)
+        if qtd > maximo:
+            return max(1, int(ini + janela_s - agora))
+    return 0
+
+
+def limitar(nome, maximo, janela_s=60):
+    """Decorador: no máximo `maximo` chamadas por visitante a cada `janela_s` segundos nesta rota."""
+    def deco(f):
+        @functools.wraps(f)
+        def interno(*args, **kwargs):
+            espera = _segundos_de_espera((nome, ip_cliente()), maximo, janela_s)
+            if espera:
+                resp = jsonify({"erro": "Muitas requisições seguidas. Espere %d s e tente de novo." % espera})
+                resp.status_code = 429
+                resp.headers["Retry-After"] = str(espera)
+                return resp
+            return f(*args, **kwargs)
+        return interno
+    return deco
+
+
+# ---------- espaço em disco ----------
+_DISCO = {"ate": 0.0, "bytes": 0}
+
+
+def _bytes_em_uso():
+    agora = time.time()
+    if agora < _DISCO["ate"]:
+        return _DISCO["bytes"]
+    total = 0
+    for raiz, _, arquivos in os.walk(BASE):
+        for nome in arquivos:
+            try:
+                total += os.path.getsize(os.path.join(raiz, nome))
+            except OSError:
+                pass
+    _DISCO["bytes"], _DISCO["ate"] = total, agora + 10   # recalcula no máximo a cada 10 s
+    return total
+
+
+def disco_cheio():
+    return MAX_DISCO_MB > 0 and _bytes_em_uso() >= MAX_DISCO_MB * 1024 * 1024
+
+
+# ---------- validação de links ----------
+def _host_limpo(u):
+    host = (u.hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
 def url_permitida(url):
-    """Só aceita links http(s) da Kick. Evita que o servidor seja usado pra baixar de qualquer lugar (SSRF)."""
+    """Só aceita links http(s) da Kick, sem usuário/senha e sem porta estranha. Evita que o servidor
+    seja usado pra baixar de qualquer lugar (SSRF)."""
+    if not isinstance(url, str) or len(url) > 300:
+        return False
     try:
         u = urlparse(url)
-        host = (u.hostname or "").lower()
+        host = _host_limpo(u)
+        porta = u.port
     except ValueError:
         return False
-    if host.startswith("www."):
-        host = host[4:]
+    if u.username or u.password or porta not in (None, 80, 443):
+        return False
     return u.scheme in ("http", "https") and host in HOSTS_KICK
+
+
+class _SemRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None   # não segue: quem decide para onde ir somos nós
+
+
+_ABRIR_SEM_REDIRECT = build_opener(_SemRedirect)
+
+
+def _passo_redirect(url):
+    """Um único passo de redirecionamento, sem seguir. Retorna (codigo_http, location); (None, '') se falhar."""
+    try:
+        if curl_requests is not None:
+            r = curl_requests.get(url, impersonate="chrome", timeout=10, allow_redirects=False)
+            return r.status_code, r.headers.get("location", "") or ""
+        req = Request(url, headers={"User-Agent": UA_NAV})
+        try:
+            with _ABRIR_SEM_REDIRECT.open(req, timeout=10) as resp:
+                return resp.status, ""
+        except HTTPError as e:
+            return e.code, e.headers.get("Location", "") or ""
+    except Exception:
+        return None, ""
+
+
+_ENCURTADOS = {}
+_ENCURTADOS_LOCK = threading.Lock()
+
+
+def normalizar_url_kick(url):
+    """Devolve o link final em kick.com, ou '' se não for aceitável.
+    Links encurtados (kzl.ink) são resolvidos aqui, com no máximo 3 saltos, e CADA destino é validado:
+    assim o yt-dlp nunca recebe um link que acabe em outro site."""
+    url = (url or "").strip()
+    agora = time.time()
+    with _ENCURTADOS_LOCK:
+        achado = _ENCURTADOS.get(url)
+        if achado and achado[1] > agora:
+            return achado[0]
+    atual = url
+    resultado = ""
+    for _ in range(4):
+        if not url_permitida(atual):
+            break
+        if _host_limpo(urlparse(atual)) not in HOSTS_ENCURTADOR:
+            resultado = atual
+            break
+        codigo, destino = _passo_redirect(atual)
+        if codigo not in (301, 302, 303, 307, 308) or not destino:
+            break
+        atual = urljoin(atual, destino)
+    if resultado:
+        with _ENCURTADOS_LOCK:
+            if len(_ENCURTADOS) > 500:
+                _ENCURTADOS.clear()
+            _ENCURTADOS[url] = (resultado, agora + 600)
+    return resultado
 
 
 def slug_da_url(url):
@@ -1049,6 +1345,8 @@ def _checar_limites_locked(ip):
         return "O servidor está cheio agora. Tente de novo em alguns minutos."
     if sum(1 for j in ativos if j.get("ip") == ip) >= MAX_ATIVOS_POR_IP:
         return "Você já tem %d tarefas em andamento. Espere uma terminar." % MAX_ATIVOS_POR_IP
+    if disco_cheio():
+        return "O servidor está sem espaço no momento. Tente de novo em alguns minutos."
     return ""
 
 
@@ -1059,9 +1357,9 @@ def criar_job(**extra):
         erro = _checar_limites_locked(ip)
         if erro:
             return None, erro
-        job_id = uuid.uuid4().hex[:8]
+        job_id = secrets.token_urlsafe(16)   # 22 caracteres, 128 bits: quem não tem o link não acha o clipe
         while job_id in JOBS:
-            job_id = uuid.uuid4().hex[:8]
+            job_id = secrets.token_urlsafe(16)
         job = {
             "estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": "", "pasta": "",
             "info": [], "picos": [], "usados": 0, "stream": "", "headers": {},
@@ -1157,7 +1455,7 @@ def _loop_limpeza():
 # ============================== YT-DLP / FFMPEG ==============================
 
 def extrair_stream(url):
-    cmd_json = ["yt-dlp", "--no-warnings", "--no-playlist", "-j", "-f", "best[height<=720]/best", url]
+    cmd_json = ["yt-dlp", "--no-warnings", "--no-playlist", "-j", "-f", "best[height<=720]/best", "--", url]
     r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
     if r.returncode == 0 and r.stdout.strip():
         for linha in r.stdout.strip().splitlines():
@@ -1169,7 +1467,7 @@ def extrair_stream(url):
             except json.JSONDecodeError:
                 continue
 
-    cmd_url = ["yt-dlp", "--no-warnings", "--no-playlist", "-g", "-f", "best[height<=720]/best", url]
+    cmd_url = ["yt-dlp", "--no-warnings", "--no-playlist", "-g", "-f", "best[height<=720]/best", "--", url]
     r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
     links = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip().startswith("http")]
     if links:
@@ -1695,10 +1993,12 @@ def _consultar_canal(c):
 
 @app.route("/")
 def inicio():
-    return Response(PAGINA, mimetype="text/html")
+    g.nonce = secrets.token_urlsafe(16)   # novo a cada resposta: é ele que autoriza o script e o CSS da página
+    return Response(PAGINA.replace("__NONCE__", g.nonce), mimetype="text/html")
 
 
 @app.route("/api/lives")
+@limitar("lives", 30)
 def api_lives():
     """Quem está online. Uma consulta por 30s para todos os visitantes (e não uma por visitante)."""
     with _LIVES_LOCK:
@@ -1712,11 +2012,13 @@ def api_lives():
 
 
 @app.route("/iniciar", methods=["POST"])
+@limitar("iniciar", 8)
 def iniciar():
-    dados = request.get_json(silent=True) or {}
-    url = str(dados.get("url", "")).strip()
-    if not url_permitida(url):
-        return jsonify({"id": "", "erro": "Use um link da Kick (kick.com)."}), 400
+    dados = request.get_json(silent=True)
+    dados = dados if isinstance(dados, dict) else {}
+    url = normalizar_url_kick(str(dados.get("url", "")))
+    if not url:
+        return jsonify({"id": "", "erro": "Use um link da Kick (kick.com). Se for um link encurtado e não funcionar, cole o link direto do canal."}), 400
 
     minutos = ler_numero(dados.get("min", 5), 5.0, float)
     minutos = max(0.5, min(minutos, MAX_CAPTURA_MIN))
@@ -1731,9 +2033,11 @@ def iniciar():
 
 
 @app.route("/iniciar_vod", methods=["POST"])
+@limitar("iniciar", 8)
 def iniciar_vod():
-    dados = request.get_json(silent=True) or {}
-    url = str(dados.get("url", "")).strip()
+    dados = request.get_json(silent=True)
+    dados = dados if isinstance(dados, dict) else {}
+    url = normalizar_url_kick(str(dados.get("url", "")))
     if not slug_da_url(url):
         return jsonify({"id": "", "erro": "Cole o link do canal da Kick."}), 400
 
@@ -1749,9 +2053,11 @@ def iniciar_vod():
 
 
 @app.route("/mais_clipes/<job_id>", methods=["POST"])
+@limitar("mais", 8)
 def mais_clipes(job_id):
     """Gera mais clipes do mesmo job, sem reler o chat."""
-    dados = request.get_json(silent=True) or {}
+    dados = request.get_json(silent=True)
+    dados = dados if isinstance(dados, dict) else {}
     qtd = max(1, min(ler_numero(dados.get("qtd", 5), 5), 15))
     ip = ip_cliente()
 
@@ -1785,7 +2091,9 @@ _TESTE_LOCK = threading.Lock()
 
 @app.route("/api/vod/teste")
 def api_vod_teste():
-    """Diagnóstico: o servidor consegue ler a Kick? Limitado a 1 teste a cada 15s por visitante."""
+    """Diagnóstico: o servidor consegue ler a Kick? Só existe com CLIPADOR_TESTE=1. Limitado a 1 teste a cada 15s por visitante."""
+    if not TESTE_ATIVO:
+        return "Não encontrado", 404
     agora = time.time()
     ip = ip_cliente()
     with _TESTE_LOCK:
@@ -1817,6 +2125,7 @@ def api_vod_teste():
 
 
 @app.route("/status/<job_id>")
+@limitar("status", 90)
 def status(job_id):
     with JOBS_LOCK:
         j = JOBS.get(job_id)
@@ -1843,6 +2152,7 @@ def _arquivo_do_clipe(job_id, n):
 
 
 @app.route("/clipe/<job_id>/<int:n>")
+@limitar("clipe", 30)
 def clipe(job_id, n):
     arq = _arquivo_do_clipe(job_id, n)
     if not arq:
@@ -1851,12 +2161,40 @@ def clipe(job_id, n):
 
 
 @app.route("/ver/<job_id>/<int:n>")
+@limitar("ver", 120)
 def ver_clipe(job_id, n):
     """Serve o clipe sem forçar download, para a pré-visualização."""
     arq = _arquivo_do_clipe(job_id, n)
     if not arq:
         return "Não encontrado", 404
     return send_file(arq, mimetype="video/mp4", conditional=True)
+
+
+_VAGAS_MINIATURA = threading.BoundedSemaphore(2)
+
+
+@app.route("/thumb/<job_id>/<int:n>")
+@limitar("thumb", 120)
+def miniatura(job_id, n):
+    """Miniatura (um quadro) do clipe n, gerada na primeira vez e guardada ao lado do clipe."""
+    arq = _arquivo_do_clipe(job_id, n)
+    if not arq:
+        return "Não encontrado", 404
+    saida = os.path.join(os.path.dirname(arq), "thumb_%03d.jpg" % (n - 1))
+    if not os.path.isfile(saida):
+        tmp = "%s.%s.tmp.jpg" % (saida, secrets.token_hex(4))
+        cmd = ["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-ss", "0.5", "-i", arq,
+               "-frames:v", "1", "-vf", "scale=240:-2", "-q:v", "6", tmp]
+        try:
+            with _VAGAS_MINIATURA:
+                r = subprocess.run(cmd, capture_output=True, timeout=20)
+            if r.returncode != 0 or not os.path.isfile(tmp):
+                raise RuntimeError("ffmpeg falhou")
+            os.replace(tmp, saida)
+        except Exception:
+            _remover_arquivo(tmp)
+            return "Sem miniatura", 404
+    return send_file(saida, mimetype="image/jpeg", conditional=True)
 
 
 def _enviar_e_apagar(caminho, tam_bloco=1 << 20):
@@ -1874,6 +2212,7 @@ def _enviar_e_apagar(caminho, tam_bloco=1 << 20):
 
 
 @app.route("/zip/<job_id>")
+@limitar("zip", 10)
 def baixar_zip(job_id):
     pasta, prontos = dados_do_job(job_id)
     if not pasta:
