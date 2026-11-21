@@ -17,6 +17,7 @@ Variáveis novas de segurança:
     CLIPADOR_MAX_DISCO_MB=4096  para de aceitar tarefas quando a pasta de clipes passa desse tamanho (0 = sem limite).
     CLIPADOR_TESTE=1          liga a rota /api/vod/teste e o botão de diagnóstico (deixe desligado em produção).
 """
+import atexit
 import base64
 import functools
 import json
@@ -1551,6 +1552,82 @@ def normalizar_url_kick(url):
 
 
 
+# ============================== YOUTUBE PO TOKEN ==============================
+# O plugin Python é instalado pelo pip (bgutil-ytdlp-pot-provider). O servidor
+# Node do BgUtils roda no MESMO serviço Railway, preso ao loopback.
+_YOUTUBE_POT_PROCESS = None
+_YOUTUBE_POT_LOCK = threading.Lock()
+
+def _iniciar_youtube_pot_provider():
+    """Inicia o servidor local BgUtils se ele tiver sido incluído no deploy."""
+    global _YOUTUBE_POT_PROCESS
+    pasta = os.environ.get("YOUTUBE_BGUTIL_SERVER_DIR", "").strip()
+    if not pasta:
+        candidata = os.path.join(HERE, "bgutil-ytdlp-pot-provider", "server")
+        if os.path.isfile(os.path.join(candidata, "build", "main.js")):
+            pasta = candidata
+    if not pasta or not os.path.isfile(os.path.join(pasta, "build", "main.js")):
+        log.warning("BgUtils do YouTube não configurado; yt-dlp seguirá sem PO Token. "
+                    "Configure YOUTUBE_BGUTIL_SERVER_DIR e instale o plugin Python.")
+        return False
+    node = shutil.which("node")
+    if not node:
+        log.warning("BgUtils do YouTube encontrado, mas Node.js não está instalado.")
+        return False
+    with _YOUTUBE_POT_LOCK:
+        if _YOUTUBE_POT_PROCESS is not None and _YOUTUBE_POT_PROCESS.poll() is None:
+            return True
+        try:
+            versao = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=5)
+            m = re.search(r"v(\d+)", versao.stdout or "")
+            if not m or int(m.group(1)) < 22:
+                log.warning("BgUtils exige Node.js 22 ou superior; versão detectada: %s",
+                            (versao.stdout or "desconhecida").strip())
+                return False
+            _YOUTUBE_POT_PROCESS = subprocess.Popen(
+                [node, "build/main.js", "--host", "127.0.0.1", "--port", "4416"],
+                cwd=pasta, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, close_fds=True
+            )
+            time.sleep(0.35)
+            if _YOUTUBE_POT_PROCESS.poll() is not None:
+                log.warning("O servidor BgUtils encerrou durante a inicialização.")
+                _YOUTUBE_POT_PROCESS = None
+                return False
+            log.info("BgUtils PO Token ativo em 127.0.0.1:4416.")
+            return True
+        except Exception:
+            log.exception("Não foi possível iniciar o servidor BgUtils do YouTube.")
+            _YOUTUBE_POT_PROCESS = None
+            return False
+
+def _encerrar_youtube_pot_provider():
+    processo = _YOUTUBE_POT_PROCESS
+    if processo is not None and processo.poll() is None:
+        try:
+            processo.terminate()
+            processo.wait(timeout=3)
+        except Exception:
+            try:
+                processo.kill()
+            except Exception:
+                pass
+
+atexit.register(_encerrar_youtube_pot_provider)
+
+# Não bloqueia a inicialização do site se Node/BgUtils não estiverem instalados.
+_iniciar_youtube_pot_provider()
+
+def _argumentos_youtube_pot(cliente="mweb,tv,web_safari"):
+    """Flags compartilhadas pelo diagnóstico e pela extração real do vídeo."""
+    args = ["--ignore-config", "--no-warnings", "--no-playlist",
+            "--socket-timeout", "20", "--retries", "1", "--extractor-retries", "1",
+            "--extractor-args", "youtube:player_client=" + cliente]
+    if shutil.which("node"):
+        args += ["--js-runtimes", "node"]
+    return args
+
+
 def youtube_url_permitida(url):
     """Aceita somente URLs públicas do YouTube; não segue redirecionamentos arbitrários."""
     if not isinstance(url, str) or len(url) > 500:
@@ -1579,18 +1656,13 @@ def youtube_url_permitida(url):
 
 
 def diagnosticar_youtube(url):
-    """Consulta metadados com yt-dlp sem baixar o vídeo; não altera os fluxos da Kick."""
+    """Consulta metadados usando PO Token quando o BgUtils está instalado."""
     if not youtube_url_permitida(url):
         return None, "Cole um link válido de vídeo ou live do YouTube."
-    # Cookies opcionais entram somente por variável de ambiente protegida do servidor.
-    # Nunca aceitar caminho/conteúdo de cookies enviado pelo visitante.
     cookie_path = None
     cookie_b64 = os.environ.get("YOUTUBE_COOKIES_B64", "").strip()
-    base_cmd = [
-        "yt-dlp", "--ignore-config", "--no-warnings", "--no-playlist", "--skip-download",
-        "--dump-single-json", "--socket-timeout", "20", "--retries", "1",
-        "--extractor-retries", "1",
-    ]
+    base_cmd = ["yt-dlp", *_argumentos_youtube_pot(), "--skip-download",
+                "--dump-single-json"]
     try:
         if cookie_b64:
             try:
@@ -1601,7 +1673,7 @@ def diagnosticar_youtube(url):
             primeira = cookie_text.splitlines()[0].strip() if cookie_text.splitlines() else ""
             if primeira not in ("# Netscape HTTP Cookie File", "# HTTP Cookie File"):
                 return None, "O arquivo de cookies do YouTube precisa estar no formato Netscape cookies.txt."
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\\n",
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
                                              prefix="yt-cookies-", suffix=".txt",
                                              delete=False) as cf:
                 cookie_path = cf.name
@@ -1611,29 +1683,27 @@ def diagnosticar_youtube(url):
             except OSError:
                 pass
             base_cmd += ["--cookies", cookie_path]
-        # Primeiro usa os clientes padrão do yt-dlp. Se o YouTube bloquear o cliente
-        # padrão, tenta uma combinação alternativa sem pedir cookies ao visitante.
+
+        # mweb aciona o BgUtils para gerar o GVS PO Token; os clientes seguintes
+        # são fallback automático, não dependem de cookies.
         tentativas = [base_cmd]
         if not cookie_path:
-            tentativas.append(base_cmd + [
-                "--extractor-args", "youtube:player_client=tv,web_safari"
-            ])
-            tentativas.append(base_cmd + [
-                "--extractor-args", "youtube:player_client=mweb"
-            ])
+            tentativas += [
+                ["yt-dlp", *_argumentos_youtube_pot("tv,web_safari"), "--skip-download", "--dump-single-json"],
+                ["yt-dlp", "--ignore-config", "--no-warnings", "--no-playlist",
+                 "--skip-download", "--dump-single-json", "--socket-timeout", "20",
+                 "--retries", "1", "--extractor-retries", "1"],
+            ]
         r = None
         ultimo_erro = ""
         for tentativa in tentativas:
-            resultado = subprocess.run(
-                tentativa + ["--", url.strip()],
-                capture_output=True, text=True, timeout=35
-            )
+            resultado = subprocess.run(tentativa + ["--", url.strip()],
+                                        capture_output=True, text=True, timeout=55)
             if resultado.returncode == 0 and resultado.stdout.strip():
                 r = resultado
                 break
             ultimo_erro = (resultado.stderr or "").strip()
         if r is None:
-            # Mantém a estrutura esperada abaixo para apresentar uma mensagem clara.
             r = resultado
             if ultimo_erro:
                 r.stderr = ultimo_erro
@@ -1650,10 +1720,9 @@ def diagnosticar_youtube(url):
     if r.returncode != 0 or not r.stdout.strip():
         detalhe = (r.stderr or "O yt-dlp não retornou informações do vídeo.").strip()
         if "Sign in to confirm" in detalhe or "not a bot" in detalhe.lower():
-            return None, ("O YouTube bloqueou as tentativas públicas de acesso deste servidor, mesmo após "
-                          "testarmos clientes alternativos do yt-dlp. Isso pode ser uma restrição temporária "
-                          "do IP do servidor ou do próprio vídeo. Ainda não é necessário inserir cookies: "
-                          "vamos avaliar outra alternativa antes de pedir qualquer credencial.")
+            return None, ("O YouTube ainda está recusando o acesso deste servidor. O BgUtils pode ajudar "
+                          "quando a exigência é de PO Token, mas não garante superar bloqueios de IP "
+                          "de datacenter. Nenhum cookie ou credencial foi solicitado.")
         return None, detalhe[-500:]
     try:
         info = json.loads(r.stdout.strip().splitlines()[-1])
@@ -1663,9 +1732,8 @@ def diagnosticar_youtube(url):
         "id": str(info.get("id") or "")[:32],
         "titulo": str(info.get("title") or "Vídeo do YouTube")[:160],
         "duracao_s": int(info.get("duration") or 0),
-        "status_live": str(info.get("live_status") or "not_live")[:40],
-        "disponivel": bool(info.get("formats") or info.get("url")),
     }, ""
+
 
 def slug_da_url(url):
     if not url_permitida(url):
@@ -1807,26 +1875,64 @@ def _loop_limpeza():
 # ============================== YT-DLP / FFMPEG ==============================
 
 def extrair_stream(url):
-    cmd_json = ["yt-dlp", "--no-warnings", "--no-playlist", "-j", "-f", "best[height<=720]/best", "--", url]
-    r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
-    if r.returncode == 0 and r.stdout.strip():
-        for linha in r.stdout.strip().splitlines():
-            try:
-                info = json.loads(linha)
-                stream_url = info.get("url")
-                if stream_url:
-                    return stream_url, info.get("http_headers") or {}, ""
-            except json.JSONDecodeError:
-                continue
+    """Extrai o stream. O caminho original da Kick permanece intacto; PO Token
+    e clientes alternativos só são aplicados quando a URL é do YouTube.
+    """
+    if not youtube_url_permitida(url):
+        # Caminho original da Kick, preservado sem mudanças.
+        cmd_json = ["yt-dlp", "--no-warnings", "--no-playlist", "-j",
+                    "-f", "best[height<=720]/best", "--", url]
+        r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=90)
+        if r.returncode == 0 and r.stdout.strip():
+            for linha in r.stdout.strip().splitlines():
+                try:
+                    info = json.loads(linha)
+                    stream_url = info.get("url")
+                    if stream_url:
+                        return stream_url, info.get("http_headers") or {}, ""
+                except json.JSONDecodeError:
+                    continue
+        cmd_url = ["yt-dlp", "--no-warnings", "--no-playlist", "-g",
+                   "-f", "best[height<=720]/best", "--", url]
+        r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
+        links = [linha.strip() for linha in r2.stdout.strip().splitlines()
+                 if linha.strip().startswith("http")]
+        if links:
+            return links[0], {}, ""
+        erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
+        return None, {}, erro_msg[-700:]
 
-    cmd_url = ["yt-dlp", "--no-warnings", "--no-playlist", "-g", "-f", "best[height<=720]/best", "--", url]
-    r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=90)
-    links = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip().startswith("http")]
-    if links:
-        return links[0], {}, ""
+    # Para o YouTube, diagnóstico e extração usam os mesmos clientes/PO Token.
+    tentativas = [
+        _argumentos_youtube_pot("mweb,tv,web_safari"),
+        _argumentos_youtube_pot("tv,web_safari"),
+        ["--ignore-config", "--no-warnings", "--no-playlist"],
+    ]
+    ultimo_erro = ""
+    for args_comuns in tentativas:
+        cmd_json = ["yt-dlp", *args_comuns, "-j", "-f",
+                    "best[height<=720]/best", "--", url]
+        r = subprocess.run(cmd_json, capture_output=True, text=True, timeout=120)
+        if r.returncode == 0 and r.stdout.strip():
+            for linha in r.stdout.strip().splitlines():
+                try:
+                    info = json.loads(linha)
+                    stream_url = info.get("url")
+                    if stream_url:
+                        return stream_url, info.get("http_headers") or {}, ""
+                except json.JSONDecodeError:
+                    continue
+        ultimo_erro = (r.stderr or "").strip()
 
-    erro_msg = (r.stderr or r2.stderr or "sem mensagem").strip()
-    return None, {}, erro_msg[-700:]
+        cmd_url = ["yt-dlp", *args_comuns, "-g", "-f",
+                   "best[height<=720]/best", "--", url]
+        r2 = subprocess.run(cmd_url, capture_output=True, text=True, timeout=120)
+        links = [linha.strip() for linha in r2.stdout.strip().splitlines()
+                 if linha.strip().startswith("http")]
+        if links:
+            return links[0], {}, ""
+        ultimo_erro = (r2.stderr or ultimo_erro).strip()
+    return None, {}, (ultimo_erro or "sem mensagem")[-700:]
 
 
 def args_formato(formato, leve=False):
