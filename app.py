@@ -436,6 +436,14 @@ PAGINA = """
       </div>
 
       <div class="campo">
+        <label for="modo">O que você quer clipar?</label>
+        <select id="modo" onchange="trocarModo()">
+          <option value="ao_vivo" selected>Live ao vivo</option>
+          <option value="vod">Live antiga (melhores momentos)</option>
+        </select>
+      </div>
+
+      <div class="campo" id="grupo-min">
         <label for="min">Duração da captura</label>
         <select id="min">
           <option value="5">Gravar 5 minutos (teste)</option>
@@ -443,6 +451,26 @@ PAGINA = """
           <option value="30">Gravar 30 minutos</option>
           <option value="60">Gravar 60 minutos</option>
         </select>
+      </div>
+
+      <div class="campo">
+        <label for="seg">Duração de cada clipe</label>
+        <select id="seg">
+          <option value="60" selected>1 minuto</option>
+          <option value="30">30 segundos</option>
+        </select>
+      </div>
+
+      <div class="campo" id="grupo-qtd" style="display:none">
+        <label for="qtd">Quantos clipes dos melhores momentos</label>
+        <select id="qtd">
+          <option value="3">3 clipes</option>
+          <option value="5" selected>5 clipes</option>
+          <option value="8">8 clipes</option>
+          <option value="10">10 clipes</option>
+        </select>
+        <p class="player-aviso">Usa o link do canal (ou de uma live antiga). Pega a live mais recente e acha os picos do chat.</p>
+        <button type="button" class="btn-mini" style="margin-top:8px" onclick="testarVod()">Testar se o servidor lê a Kick</button>
       </div>
 
       <button id="btn-gravar" class="btn-principal" onclick="iniciar()">Cortar meu vídeo</button>
@@ -609,9 +637,39 @@ async function filtrarOnline() {
 filtrarOnline();
 setInterval(filtrarOnline, 30000);
 
+
+function trocarModo() {
+  const vod = document.getElementById('modo').value === 'vod';
+  document.getElementById('grupo-qtd').style.display = vod ? 'block' : 'none';
+  document.getElementById('grupo-min').style.display = vod ? 'none' : 'block';
+  document.getElementById('btn-gravar').innerText = vod ? 'Achar melhores momentos' : 'Cortar meu vídeo';
+}
+
+async function testarVod() {
+  const url = document.getElementById('url').value.trim();
+  let canal = 'bak';
+  try {
+    const partes = new URL(url).pathname.split('/').filter(Boolean);
+    if (partes[0]) { canal = partes[0]; }
+  } catch (e) {}
+  document.getElementById('status').innerText = 'Testando a leitura da Kick...';
+  try {
+    const r = await fetch('/api/vod/teste?canal=' + encodeURIComponent(canal));
+    const d = await r.json();
+    document.getElementById('diag').innerText = JSON.stringify(d, null, 2);
+    const ok = d.lista_vods && d.lista_vods.ok && d.chat && d.chat.ok;
+    document.getElementById('status').innerText = ok
+      ? 'Funcionou: o servidor lê as lives antigas e o chat.'
+      : 'Não deu: veja o diagnóstico abaixo.';
+  } catch (e) {
+    document.getElementById('status').innerText = 'Erro ao testar.';
+  }
+}
+
 async function iniciar() {
   const url = document.getElementById('url').value.trim();
   const min = document.getElementById('min').value;
+  const seg = document.getElementById('seg').value;
   const btn = document.getElementById('btn-gravar');
   if (!url) { return; }
   btn.disabled = true;
@@ -620,10 +678,13 @@ async function iniciar() {
   document.getElementById('lista').innerHTML = '';
   document.getElementById('status').innerText = 'Iniciando...';
   try {
-    const r = await fetch('/iniciar', {
+    const vod = document.getElementById('modo').value === 'vod';
+    const r = await fetch(vod ? '/iniciar_vod' : '/iniciar', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({url: url, min: min})
+      body: JSON.stringify(vod
+        ? {url: url, seg: seg, qtd: document.getElementById('qtd').value}
+        : {url: url, min: min, seg: seg})
     });
     const d = await r.json();
     if (!r.ok || !d.id) {
@@ -745,7 +806,7 @@ def normalizar_url(url):
     return url
 
 
-def gravar(job_id, url, minutos):
+def gravar(job_id, url, minutos, seg=SEG):
     pasta = os.path.join(BASE, job_id)
     os.makedirs(pasta, exist_ok=True)
     atualizar_job(job_id, pasta=pasta)
@@ -819,7 +880,7 @@ def gravar(job_id, url, minutos):
         "-t", str(minutos * 60),
         "-c", "copy",
         "-f", "segment",
-        "-segment_time", str(SEG),
+        "-segment_time", str(seg),
         "-reset_timestamps", "1",
         padrao,
     ]
@@ -885,6 +946,267 @@ def gravar(job_id, url, minutos):
         )
 
 
+
+# ======================= LIVES ANTIGAS (VOD) =======================
+import re
+from datetime import datetime, timezone
+
+UA_NAV = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+
+def kick_get_json(url, timeout=20):
+    """GET em JSON na Kick. Retorna (dados, erro). Usa curl_cffi se existir (passa melhor na Cloudflare)."""
+    try:
+        try:
+            from curl_cffi import requests as cr
+            r = cr.get(url, impersonate="chrome", timeout=timeout,
+                       headers={"Accept": "application/json"})
+            if r.status_code != 200:
+                return None, "HTTP %s" % r.status_code
+            return r.json(), ""
+        except ImportError:
+            pass
+        req = Request(url, headers={
+            "User-Agent": UA_NAV,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+            "Referer": "https://kick.com/",
+        })
+        with urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8", errors="ignore")), ""
+    except Exception as e:
+        return None, str(e)[-160:]
+
+
+def slug_da_url(url):
+    try:
+        u = urlparse(url)
+        partes = [p for p in u.path.split("/") if p]
+        if (u.hostname or "").replace("www.", "") in ("kick.com", "kzl.ink") and partes:
+            return partes[0]
+    except Exception:
+        pass
+    return ""
+
+
+def listar_vods(slug):
+    """Retorna (lista, erro). Cada item: uuid, titulo, inicio(iso), duracao_s, views, canal_id."""
+    dados, erro = kick_get_json("https://kick.com/api/v2/channels/%s/videos" % quote(slug))
+    if dados is None:
+        return [], erro
+    if isinstance(dados, dict):
+        dados = dados.get("data") or dados.get("videos") or []
+    out = []
+    for v in dados:
+        vid = v.get("video") or {}
+        uuid_ = vid.get("uuid") or v.get("uuid")
+        if not uuid_ or vid.get("is_private"):
+            continue
+        out.append({
+            "uuid": uuid_,
+            "titulo": v.get("session_title") or "Live sem título",
+            "inicio": v.get("start_time") or v.get("created_at") or "",
+            "duracao_s": int((v.get("duration") or 0) / 1000),
+            "views": v.get("views") or 0,
+            "source": v.get("source") or "",
+        })
+    return out, ""
+
+
+def _iso_para_epoch(txt):
+    txt = (txt or "").strip().replace(" ", "T")
+    if not txt:
+        return None
+    if txt.endswith("Z"):
+        txt = txt[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(txt)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
+    """Percorre o chat de trás pra frente a partir do fim da VOD. Retorna (lista de segundos relativos, erro)."""
+    canal, erro = kick_get_json("https://kick.com/api/v2/channels/%s" % quote(canal_slug))
+    if not canal or "id" not in canal:
+        return [], "não consegui o id do canal (%s)" % erro
+    cid = canal["id"]
+
+    fim_epoch = inicio_epoch + duracao_s
+    cursor = str(int(fim_epoch * 1_000_000))
+    tempos, vistos = [], set()
+    paginas, sem_novas = 0, 0
+    while paginas < 4000:
+        dados, erro = kick_get_json(
+            "https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (cid, cursor))
+        if dados is None:
+            return tempos, ("falha na página %d: %s" % (paginas, erro)) if not tempos else ""
+        bloco = dados.get("data") or {}
+        msgs = bloco.get("messages") or []
+        novas = 0
+        menor = None
+        for m in msgs:
+            mid = m.get("id")
+            if mid in vistos:
+                continue
+            vistos.add(mid)
+            t = _iso_para_epoch(m.get("created_at"))
+            if t is None:
+                continue
+            menor = t if menor is None else min(menor, t)
+            if inicio_epoch <= t <= fim_epoch:
+                tempos.append(t - inicio_epoch)
+                novas += 1
+        paginas += 1
+        proximo = bloco.get("cursor")
+        if progresso:
+            progresso(paginas, len(tempos))
+        if not proximo or not msgs:
+            break
+        if menor is not None and menor < inicio_epoch:
+            break
+        sem_novas = sem_novas + 1 if novas == 0 else 0
+        if sem_novas >= 30:
+            break
+        cursor = str(proximo)
+        time.sleep(0.15)
+    return tempos, ""
+
+
+def achar_picos(tempos, duracao_s, quantidade, tamanho_clipe):
+    """Janela deslizante de 30s; pega os maiores picos sem sobrepor. Retorna lista de (inicio_s, msgs)."""
+    if not tempos or duracao_s <= 0:
+        return []
+    janela = 30
+    n = int(duracao_s) + 1
+    por_seg = [0] * (n + 1)
+    for t in tempos:
+        i = int(t)
+        if 0 <= i < n:
+            por_seg[i] += 1
+    soma = [0] * (n + 2)
+    for i in range(n + 1):
+        soma[i + 1] = soma[i] + por_seg[i]
+    pontos = []
+    for i in range(n):
+        j = min(n, i + janela)
+        pontos.append((soma[j] - soma[i], i))
+    pontos.sort(reverse=True)
+    escolhidos = []
+    for score, i in pontos:
+        if score <= 0 or len(escolhidos) >= quantidade:
+            break
+        centro = i + janela // 2
+        ini = max(0, centro - tamanho_clipe // 2)
+        if ini + tamanho_clipe > duracao_s:
+            ini = max(0, duracao_s - tamanho_clipe)
+        if all(abs(ini - e[0]) >= max(tamanho_clipe, 90) for e in escolhidos):
+            escolhidos.append((ini, score))
+    escolhidos.sort()
+    return escolhidos
+
+
+def stream_da_vod(slug, uuid_):
+    url = "https://kick.com/%s/videos/%s" % (slug, uuid_)
+    return extrair_stream(url)
+
+
+def gravar_vod(job_id, url, tamanho_clipe, quantidade):
+    pasta = os.path.join(BASE, job_id)
+    os.makedirs(pasta, exist_ok=True)
+    atualizar_job(job_id, pasta=pasta, estado="abrindo", msg="Procurando a live antiga...", diag="")
+
+    slug = slug_da_url(url)
+    m = re.search(r"/videos/([0-9a-fA-F-]{36})", url)
+    if not slug:
+        atualizar_job(job_id, estado="erro", msg="Link inválido.", diag="Use o link do canal da Kick.")
+        return
+
+    vods, erro = listar_vods(slug)
+    if not vods:
+        atualizar_job(job_id, estado="erro",
+                      msg="Não consegui listar as lives antigas desse canal.",
+                      diag=erro or "O canal não tem lives salvas.")
+        return
+    escolhida = None
+    if m:
+        escolhida = next((v for v in vods if v["uuid"] == m.group(1)), None)
+    if not escolhida:
+        escolhida = vods[0]
+
+    inicio_epoch = _iso_para_epoch(escolhida["inicio"])
+    dur = escolhida["duracao_s"]
+    if inicio_epoch is None or dur <= 0:
+        atualizar_job(job_id, estado="erro", msg="Essa live não tem horário ou duração válidos.",
+                      diag=json.dumps(escolhida)[:400])
+        return
+
+    def prog(pags, msgs):
+        atualizar_job(job_id, estado="analisando",
+                      msg="Lendo o chat da live... %d mensagens" % msgs,
+                      diag="Página %d do chat | live: %s" % (pags, escolhida["titulo"][:60]))
+
+    tempos, erro = baixar_chat_vod(slug, inicio_epoch, dur, prog)
+    if not tempos:
+        atualizar_job(job_id, estado="erro", msg="Não consegui ler o chat dessa live.",
+                      diag=erro or "Nenhuma mensagem encontrada no período.")
+        return
+
+    picos = achar_picos(tempos, dur, quantidade, tamanho_clipe)
+    if not picos:
+        atualizar_job(job_id, estado="erro", msg="Não achei momentos de destaque no chat.", diag="")
+        return
+
+    atualizar_job(job_id, estado="gravando",
+                  msg="Achei %d momentos. Cortando..." % len(picos),
+                  diag="Chat: %d mensagens analisadas" % len(tempos))
+
+    stream, headers, erro_yt = stream_da_vod(slug, escolhida["uuid"])
+    if not stream:
+        atualizar_job(job_id, estado="erro", msg="Não consegui o vídeo dessa live.",
+                      diag=erro_yt or "sem mensagem")
+        return
+
+    user_agent = headers.get("User-Agent", UA_NAV)
+    hdr = "".join("%s: %s\r\n" % (k, v) for k, v in headers.items()
+                  if k.lower() != "user-agent" and v)
+    extra = ["-headers", hdr] if hdr else []
+
+    feitos = 0
+    notas = []
+    for idx, (ini, score) in enumerate(picos):
+        saida = os.path.join(pasta, "clipe_%03d.mp4" % idx)
+        cmd = ["ffmpeg", "-y", "-user_agent", user_agent, *extra,
+               "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+               "-rw_timeout", "20000000",
+               "-ss", str(int(ini)), "-i", stream, "-t", str(tamanho_clipe),
+               "-c", "copy", "-avoid_negative_ts", "make_zero", saida]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+        except subprocess.TimeoutExpired:
+            notas.append("clipe %d: demorou demais" % (idx + 1))
+            continue
+        if r.returncode == 0 and os.path.isfile(saida) and os.path.getsize(saida) > 0:
+            feitos += 1
+            notas.append("clipe %d: min %d:%02d (%d msgs)" % (idx + 1, ini // 60, ini % 60, score))
+        else:
+            notas.append("clipe %d falhou: %s" % (idx + 1, (r.stderr or "")[-120:].strip()))
+        atualizar_job(job_id, clipes=feitos, msg="Cortando... %d de %d" % (idx + 1, len(picos)),
+                      diag="\n".join(notas)[-700:])
+
+    if feitos:
+        atualizar_job(job_id, estado="fim", clipes=feitos,
+                      msg="Pronto! %d clipes dos melhores momentos." % feitos,
+                      diag="\n".join(notas)[-700:])
+    else:
+        atualizar_job(job_id, estado="erro", clipes=0, msg="Não consegui cortar nenhum clipe.",
+                      diag="\n".join(notas)[-700:])
+
+
 @app.route("/")
 def inicio():
     return render_template_string(PAGINA)
@@ -905,6 +1227,13 @@ def iniciar():
         minutos = 5
     minutos = max(1, min(minutos, 180))
 
+    try:
+        seg = int(dados.get("seg", 60))
+    except (TypeError, ValueError):
+        seg = 60
+    if seg not in (30, 60):
+        seg = 60
+
     job_id = uuid.uuid4().hex[:8]
     with JOBS_LOCK:
         JOBS[job_id] = {
@@ -915,8 +1244,59 @@ def iniciar():
             "pasta": "",
         }
 
-    threading.Thread(target=gravar, args=(job_id, url, minutos), daemon=True).start()
+    threading.Thread(target=gravar, args=(job_id, url, minutos, seg), daemon=True).start()
     return jsonify({"id": job_id})
+
+
+
+@app.route("/iniciar_vod", methods=["POST"])
+def iniciar_vod():
+    dados = request.get_json(silent=True) or {}
+    url = str(dados.get("url", "")).strip()
+    if not (url.startswith("http://") or url.startswith("https://")) or not slug_da_url(url):
+        return jsonify({"id": "", "erro": "Cole o link do canal da Kick."}), 400
+    try:
+        seg = int(dados.get("seg", 60))
+    except (TypeError, ValueError):
+        seg = 60
+    if seg not in (30, 60):
+        seg = 60
+    try:
+        qtd = int(dados.get("qtd", 5))
+    except (TypeError, ValueError):
+        qtd = 5
+    qtd = max(1, min(qtd, 15))
+
+    job_id = uuid.uuid4().hex[:8]
+    with JOBS_LOCK:
+        JOBS[job_id] = {"estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": "", "pasta": ""}
+    threading.Thread(target=gravar_vod, args=(job_id, url, seg, qtd), daemon=True).start()
+    return jsonify({"id": job_id})
+
+
+@app.route("/api/vod/teste")
+def api_vod_teste():
+    slug = request.args.get("canal", "bak").strip() or "bak"
+    info = {"canal": slug, "curl_cffi": False}
+    try:
+        import curl_cffi  # noqa: F401
+        info["curl_cffi"] = True
+    except ImportError:
+        pass
+    vods, erro = listar_vods(slug)
+    info["lista_vods"] = {"ok": bool(vods), "quantidade": len(vods), "erro": erro}
+    if vods:
+        v = vods[0]
+        info["primeira_vod"] = {"titulo": v["titulo"][:60], "inicio": v["inicio"], "duracao_s": v["duracao_s"]}
+        canal, e2 = kick_get_json("https://kick.com/api/v2/channels/%s" % quote(slug))
+        info["canal_id"] = {"ok": bool(canal and "id" in canal), "erro": e2}
+        ini = _iso_para_epoch(v["inicio"])
+        if canal and "id" in canal and ini and v["duracao_s"] > 0:
+            cur = str(int((ini + v["duracao_s"]) * 1_000_000))
+            d, e3 = kick_get_json("https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (canal["id"], cur))
+            msgs = ((d or {}).get("data") or {}).get("messages") or []
+            info["chat"] = {"ok": bool(msgs), "mensagens_na_pagina": len(msgs), "erro": e3}
+    return jsonify(info)
 
 
 @app.route("/status/<job_id>")
