@@ -5,7 +5,8 @@ import threading
 import time
 import uuid
 import zipfile
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
+from urllib.request import Request, urlopen
 from flask import Flask, request, send_file, render_template_string, jsonify
 
 app = Flask(__name__)
@@ -831,8 +832,46 @@ def normalizar_url(url):
     return url
 
 
+def checar_tiktok_api(usuario):
+    """Pergunta direto ao TikTok. Retorna (True/False/None, detalhe, viewers)."""
+    url = (
+        "https://www.tiktok.com/api-live/user/room?aid=1988&sourceType=54&uniqueId="
+        + quote(usuario)
+    )
+    req = Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+        "Referer": f"https://www.tiktok.com/@{usuario}/live",
+    })
+    try:
+        with urlopen(req, timeout=15) as resp:
+            corpo = resp.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        return None, "api: " + str(e)[-150:], None
+    try:
+        d = json.loads(corpo)
+    except json.JSONDecodeError:
+        return None, "api: resposta não é JSON (possível bloqueio/captcha)", None
+    dados = d.get("data") or {}
+    user = dados.get("user") or {}
+    status = user.get("status")
+    room = dados.get("liveRoom") or {}
+    if status == 2:
+        viewers = (room.get("liveRoomStats") or {}).get("userCount")
+        return True, "", viewers if isinstance(viewers, int) else None
+    if status is not None:
+        return False, "", None
+    return None, "api: sem campo status (código " + str(d.get("statusCode")) + ")", None
+
+
 def checar_tiktok(usuario):
     """Retorna (estado, detalhe). estado: True = ao vivo, False = offline, None = incerto."""
+    estado, detalhe_api, _ = checar_tiktok_api(usuario)
+    if estado is not None:
+        return estado, ""
+
     url = f"https://www.tiktok.com/@{usuario}/live"
     try:
         r = subprocess.run(
@@ -840,19 +879,19 @@ def checar_tiktok(usuario):
             capture_output=True, text=True, timeout=25,
         )
     except subprocess.TimeoutExpired:
-        return None, "o yt-dlp demorou demais para responder"
+        return None, detalhe_api + " | yt-dlp: demorou demais"
     except FileNotFoundError:
-        return None, "yt-dlp não encontrado no servidor"
+        return None, detalhe_api + " | yt-dlp não encontrado no servidor"
     except Exception as e:
-        return None, str(e)[-200:]
+        return None, detalhe_api + " | " + str(e)[-150:]
     links = [l for l in r.stdout.strip().splitlines() if l.strip().startswith("http")]
     if r.returncode == 0 and links:
         return True, ""
     erro = (r.stderr or "").strip()
     baixo = erro.lower()
     if "not currently live" in baixo or "not live" in baixo or "offline" in baixo:
-        return False, ""
-    return None, erro[-200:] or "sem mensagem do yt-dlp"
+        return None, detalhe_api + " | yt-dlp diz offline (pode estar errado)"
+    return None, detalhe_api + " | yt-dlp: " + (erro[-150:] or "sem mensagem")
 
 
 TT_ARQ = os.path.join(BASE, "tiktok_cache.json")
@@ -1116,6 +1155,8 @@ def api_tiktok_teste():
 
     usuario = request.args.get("u", TIKTOK[0]["usuario"])
     info["usuario"] = usuario
+    est, det, vw = checar_tiktok_api(usuario)
+    info["api_direta"] = {"estado": est, "detalhe": det, "viewers": vw}
     try:
         r = subprocess.run(
             ["yt-dlp", "--no-warnings", "-g", "-f", "best[height<=720]/best",
