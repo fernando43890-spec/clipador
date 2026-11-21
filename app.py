@@ -1148,10 +1148,11 @@ def gravar(job_id, url, minutos):
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
     )
 
-    extra_headers = []
-    for chave, valor in headers.items():
-        if chave.lower() != "user-agent" and valor:
-            extra_headers.extend(["-headers", f"{chave}: {valor}"])
+    hdr = "".join(
+        f"{k}: {v}\r\n" for k, v in headers.items()
+        if k.lower() != "user-agent" and v
+    )
+    extra_headers = ["-headers", hdr] if hdr else []
 
     atualizar_job(
         job_id,
@@ -1164,6 +1165,10 @@ def gravar(job_id, url, minutos):
         "ffmpeg", "-y",
         "-user_agent", user_agent,
         *extra_headers,
+        "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+        "-reconnect", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "5",
         "-rw_timeout", "15000000",
         "-i", stream,
         "-t", str(minutos * 60),
