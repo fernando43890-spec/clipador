@@ -296,6 +296,7 @@ HTML = r"""
 
   .vazio { display: grid; gap: 6px; justify-items: center; text-align: center; padding: 26px 16px; color: var(--mutado); font-size: .9rem; }
   .vazio strong { color: var(--texto); font-size: .98rem; }
+  .vazio.oculto, details.caixa.oculto { display: none; }
   .vazio svg { width: 44px; height: 44px; margin-bottom: 4px; opacity: .8; }
 
   details.caixa summary { cursor: pointer; font-size: .86rem; font-weight: 600; color: var(--mutado); list-style-position: inside; }
@@ -539,7 +540,7 @@ HTML = r"""
           <div id="status" role="status" aria-live="polite" data-estado="ocioso">Cole um link de uma live da Kick para começar.</div>
         </div>
 
-        <div class="caixa vazio" id="vazio">
+        <div class="caixa vazio oculto" id="vazio">
           <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="5" y="9" width="38" height="30" rx="6" stroke="#aeb2c2" stroke-width="2"/><path d="M20 18.5v11l9-5.5z" fill="#58e879"/></svg>
           <strong>Seus clipes vão aparecer aqui</strong>
           <span>Cole o link de uma live da Kick, escolha como cortar e toque em cortar.</span>
@@ -561,7 +562,7 @@ HTML = r"""
           <p class="player-aviso" id="mais-aviso"></p>
         </div>
 
-        <details class="caixa">
+        <details class="caixa oculto" id="detalhes">
           <summary>Detalhes técnicos</summary>
           <pre id="diag">-</pre>
         </details>
@@ -1004,6 +1005,7 @@ async function testarVod() {
     if (partes[0] && RE_SLUG.test(partes[0])) { canal = partes[0]; }
   } catch (e) {}
   $('status-box').style.display = 'block';
+  $('detalhes').style.display = 'block';
   definirStatus('Testando a leitura da Kick...', 'trabalhando');
   const res = await pedir('/api/vod/teste?canal=' + encodeURIComponent(canal));
   if (!res.ok) { definirStatus(res.data.erro || 'Erro ao testar.', 'erro'); return; }
@@ -1022,12 +1024,13 @@ function resetarResultados() {
   lista.style.display = 'none';
   lista.replaceChildren();
   $('mais').style.display = 'none';
-  $('vazio').style.display = '';
+  $('vazio').style.display = 'grid';
 }
 
 async function iniciar() {
   const url = $('url').value.trim();
   const btn = $('btn-gravar');
+  $('status-box').style.display = 'block';
   if (!url) {
     definirStatus('Cole o link da Kick primeiro.', 'erro');
     $('url').focus();
@@ -1035,6 +1038,7 @@ async function iniciar() {
   }
   btn.disabled = true;
   $('status-box').style.display = 'block';
+  $('detalhes').style.display = 'block';
   clearTimeout(timerChecar);
   resetarResultados();
   definirStatus('Iniciando...', 'trabalhando');
@@ -1142,7 +1146,7 @@ function atualizarListaClipes(clipesQtd, jobId, info) {
   const lista = $('lista');
   if (clipesQtd <= 0) {
     lista.style.display = 'none';
-    $('vazio').style.display = '';
+    $('vazio').style.display = 'grid';
     return;
   }
   lista.style.display = 'block';
