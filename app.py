@@ -1649,6 +1649,11 @@ HTML = r"""
   .ponto.off { background: #777b8d; }
   .player { display: block; width: 100%; aspect-ratio: 16/9; border: 0; border-radius: 10px; background: #000; }
   .player-aviso { margin: 8px 0 0; font-size: .78rem; color: var(--mutado); }
+  .marcacao-box { margin-top: 12px; padding: 12px; border: 1px solid rgba(88, 232, 121, .35); border-radius: 11px; background: rgba(12, 24, 16, .72); }
+  .marcacao-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+  .marcacao-status { margin: 8px 0 0; color: var(--mutado); font-size: .82rem; line-height: 1.45; min-height: 18px; }
+  .marcacao-status.erro { color: var(--erro); }
+  .marcacao-box .btn-mini:not(:disabled) { border-color: var(--verde); }
 
   /* ---------- lives (no topo da página) ---------- */
   .lives-sec { margin-bottom: 20px; }
@@ -1863,6 +1868,15 @@ HTML = r"""
           </div>
           <iframe id="player" class="player" title="Prévia da live" allow="autoplay; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
           <p class="player-aviso">Se o vídeo não aparecer, a gravação ainda pode funcionar.</p>
+          <div class="marcacao-box oculto" id="marcacao-box">
+            <strong>Recortar um momento da live</strong>
+            <p class="player-aviso">Ative a marcação e aguarde 30 segundos. Quando acontecer algo, toque em “Marcar momento” para gerar um clipe com 30 segundos antes e 30 depois.</p>
+            <div class="marcacao-acoes">
+              <button id="btn-ativar-marcacao" type="button" class="btn-mini sec">Ativar marcação</button>
+              <button id="btn-marcar-momento" type="button" class="btn-mini" disabled>Marcar momento</button>
+            </div>
+            <p id="marcacao-status" class="marcacao-status" role="status" aria-live="polite">Aguardando uma live.</p>
+          </div>
         </section>
       </div>
 
@@ -2122,6 +2136,107 @@ $('feedback-form').addEventListener('submit', async function (e) {
   if (r.ok) { $('feedback-mensagem').value = ''; }
 });
 
+// ---------- marcação de momento em live (independente do corte automático) ----------
+let canalMarcacao = '';
+let timerMarcacao = null;
+let timerJobMarcacao = null;
+let jobMarcacao = '';
+let marcacaoAtiva = false;
+let marcacaoEmProcesso = false;
+
+function statusMarcacao(txt, erro) {
+  const alvo = $('marcacao-status');
+  if (!alvo) return;
+  alvo.textContent = txt;
+  alvo.classList.toggle('erro', !!erro);
+}
+
+function pararConsultaMarcacao() {
+  if (timerMarcacao) { clearTimeout(timerMarcacao); timerMarcacao = null; }
+}
+
+async function consultarMarcacao() {
+  if (!canalMarcacao || !marcacaoAtiva) return;
+  const res = await pedir('/marcar/status?canal=' + encodeURIComponent(canalMarcacao));
+  if (!marcacaoAtiva) return;
+  if (!res.ok) { statusMarcacao(res.data.erro || 'Não consegui consultar o buffer.', true); return; }
+  const d = res.data;
+  if (d.estado === 'gravando') {
+    const falta = Math.max(0, Math.ceil(32 - Number(d.segundos || 0)));
+    if (falta > 0) {
+      $('btn-marcar-momento').disabled = true;
+      statusMarcacao('Preparando o buffer... aguarde ' + falta + 's para marcar com os 30s anteriores.');
+    } else {
+      $('btn-marcar-momento').disabled = marcacaoEmProcesso;
+      statusMarcacao(marcacaoEmProcesso ? 'Seu momento está sendo preparado...' : 'Pronto! Pode marcar o momento exato.');
+    }
+  } else if (d.estado === 'fila' || d.estado === 'abrindo') {
+    $('btn-marcar-momento').disabled = true;
+    statusMarcacao(d.msg || 'Preparando a captura da live...');
+  } else {
+    marcacaoAtiva = false;
+    $('btn-ativar-marcacao').disabled = false;
+    $('btn-marcar-momento').disabled = true;
+    statusMarcacao(d.msg || 'A captura da live foi encerrada.', true);
+    return;
+  }
+  timerMarcacao = setTimeout(consultarMarcacao, 2000);
+}
+
+async function ativarMarcacao() {
+  if (!canalMarcacao) return;
+  const btn = $('btn-ativar-marcacao');
+  btn.disabled = true;
+  $('btn-marcar-momento').disabled = true;
+  statusMarcacao('Conectando à live e preparando o buffer...');
+  const res = await postar('/marcar/ativar', {url: $('url').value.trim()});
+  if (!res.ok) {
+    btn.disabled = false;
+    statusMarcacao(res.data.erro || 'Não consegui ativar a marcação.', true);
+    return;
+  }
+  marcacaoAtiva = true;
+  pararConsultaMarcacao();
+  consultarMarcacao();
+}
+$('btn-ativar-marcacao').addEventListener('click', ativarMarcacao);
+
+async function consultarJobMarcacao(id) {
+  if (jobMarcacao !== id) return;
+  const res = await pedir('/status/' + encodeURIComponent(id));
+  if (jobMarcacao !== id) return;
+  if (!res.ok) { timerJobMarcacao = setTimeout(function () { consultarJobMarcacao(id); }, 4000); return; }
+  const d = res.data;
+  statusMarcacao(d.msg || 'Preparando clipe...', d.estado === 'erro');
+  if (Number(d.clipes || 0) > 0) atualizarListaClipes(Number(d.clipes), id, d.info || []);
+  if (d.estado === 'fim' || d.estado === 'erro') {
+    marcacaoEmProcesso = false;
+    $('btn-marcar-momento').disabled = false;
+    if (d.estado === 'fim') statusMarcacao('Clipe pronto! Ele apareceu na lista de clipes abaixo.');
+    return;
+  }
+  timerJobMarcacao = setTimeout(function () { consultarJobMarcacao(id); }, 2500);
+}
+
+async function marcarMomento() {
+  if (!canalMarcacao || marcacaoEmProcesso) return;
+  const btn = $('btn-marcar-momento');
+  btn.disabled = true;
+  marcacaoEmProcesso = true;
+  statusMarcacao('Momento marcado! Vou aguardar mais 30 segundos para fechar o clipe...');
+  const res = await postar('/marcar/momento', {canal: canalMarcacao, formato: $('formato').value});
+  if (!res.ok || !res.data.id) {
+    marcacaoEmProcesso = false;
+    btn.disabled = false;
+    statusMarcacao(res.data.erro || 'Não consegui marcar esse momento.', true);
+    return;
+  }
+  jobMarcacao = res.data.id;
+  if (timerJobMarcacao) clearTimeout(timerJobMarcacao);
+  consultarJobMarcacao(jobMarcacao);
+}
+$('btn-marcar-momento').addEventListener('click', marcarMomento);
+
 // ---------- prévia do link colado ----------
 function plataforma(url) {
   try {
@@ -2151,12 +2266,30 @@ function mostrarPreview() {
   const card = $('card-live');
   if (!p) {
     card.style.display = 'none';
+    $('marcacao-box').classList.add('oculto');
     $('player').src = 'about:blank';
     ultimoEmbed = '';
+    canalMarcacao = '';
+    marcacaoAtiva = false;
+    marcacaoEmProcesso = false;
+    pararConsultaMarcacao();
+    $('btn-ativar-marcacao').disabled = false;
+    $('btn-marcar-momento').disabled = true;
+    statusMarcacao('Aguardando uma live.');
     return;
   }
   card.style.display = 'block';
+  $('marcacao-box').classList.remove('oculto');
   $('plat-nome').textContent = p.nome;
+  if (p.canal !== canalMarcacao) {
+    canalMarcacao = p.canal;
+    marcacaoAtiva = false;
+    marcacaoEmProcesso = false;
+    pararConsultaMarcacao();
+    $('btn-ativar-marcacao').disabled = false;
+    $('btn-marcar-momento').disabled = true;
+    statusMarcacao('Ative a marcação para começar a guardar os últimos 30 segundos.');
+  }
   if (p.embed !== ultimoEmbed) {
     $('player').src = p.embed;
     ultimoEmbed = p.embed;
@@ -3954,6 +4087,170 @@ def _consultar_canal(c):
     return item
 
 
+# ============================== MARCAÇÃO DE MOMENTO EM LIVE ==============================
+# Buffer circular independente: segmentos curtos são mantidos por até 90s.
+# A captura é compartilhada por canal e encerrada após 15 minutos sem atividade.
+_MARCACOES = {}
+_MARCACOES_LOCK = threading.RLock()
+_MARCACAO_SEG = 5
+_MARCACAO_RETENCAO = 90
+_MARCACAO_INATIVIDADE = 15 * 60
+
+def _marcacao_timestamp(nome):
+    m = re.match(r"^seg_(\d{8}_\d{6})\.ts$", nome or "")
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1), "%Y%m%d_%H%M%S").timestamp()
+    except ValueError:
+        return None
+
+def _marcacao_capturar(canal, url, sessao):
+    pasta = sessao["pasta"]
+    log_path = os.path.join(pasta, "captura.log")
+    try:
+        with VAGAS_CAPTURA:
+            with _MARCACOES_LOCK:
+                if _MARCACOES.get(canal) is not sessao:
+                    return
+                sessao["estado"] = "abrindo"
+                sessao["msg"] = "Conectando à live..."
+            stream, headers, erro = extrair_stream(url)
+            if not stream:
+                raise RuntimeError(erro or "Não consegui encontrar o vídeo da live.")
+            user_agent, extra_headers = cabecalhos_ffmpeg(headers)
+            padrao = os.path.join(pasta, "seg_%Y%m%d_%H%M%S.ts")
+            cmd = [
+                "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "warning", "-y",
+                "-user_agent", user_agent, *extra_headers,
+                "-protocol_whitelist", PROTOCOLOS, "-reconnect", "1",
+                "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+                "-rw_timeout", "15000000", "-i", stream,
+                "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy",
+                "-f", "segment", "-segment_time", str(_MARCACAO_SEG),
+                "-segment_format", "mpegts", "-reset_timestamps", "1",
+                "-strftime", "1", padrao,
+            ]
+            with open(log_path, "w", encoding="utf-8") as logf:
+                proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=logf)
+                with _MARCACOES_LOCK:
+                    if _MARCACOES.get(canal) is not sessao:
+                        proc.terminate()
+                        return
+                    sessao["proc"] = proc
+                    sessao["inicio"] = time.time()
+                    sessao["estado"] = "gravando"
+                    sessao["msg"] = "Buffer ativo. Aguarde 30 segundos para marcar."
+                while proc.poll() is None:
+                    agora = time.time()
+                    with _MARCACOES_LOCK:
+                        if _MARCACOES.get(canal) is not sessao:
+                            break
+                        inativo = agora - sessao.get("ultima_atividade", agora)
+                    if inativo >= _MARCACAO_INATIVIDADE:
+                        break
+                    try:
+                        for nome in os.listdir(pasta):
+                            ts = _marcacao_timestamp(nome)
+                            if ts is not None and agora - ts > _MARCACAO_RETENCAO:
+                                _remover_arquivo(os.path.join(pasta, nome))
+                    except OSError:
+                        pass
+                    time.sleep(2)
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+            with _MARCACOES_LOCK:
+                if _MARCACOES.get(canal) is sessao:
+                    sessao["estado"] = "erro"
+                    sessao["msg"] = "A captura da live foi encerrada. Ative novamente se quiser continuar."
+                    sessao["proc"] = None
+            shutil.rmtree(pasta, ignore_errors=True)
+    except Exception as e:
+        log.warning("marcação da live %s falhou: %s", canal, str(e)[:300])
+        with _MARCACOES_LOCK:
+            if _MARCACOES.get(canal) is sessao:
+                sessao["estado"] = "erro"
+                sessao["msg"] = "Não consegui capturar essa live. Confira se ela está ao vivo e tente novamente."
+                sessao["diag"] = str(e)[-500:]
+                sessao["proc"] = None
+        shutil.rmtree(pasta, ignore_errors=True)
+
+def gravar_marcado(job_id, canal, formato, instante):
+    """Fecha um clipe com 30s anteriores e 30s posteriores ao clique do usuário."""
+    pasta_job = os.path.join(BASE, job_id)
+    os.makedirs(pasta_job, exist_ok=True)
+    atualizar_job(job_id, pasta=pasta_job, estado="gravando", clipes=0,
+                  msg="Momento marcado. Aguardando 30 segundos depois do clique...", diag="Buffer circular da live.")
+    with _MARCACOES_LOCK:
+        sessao = _MARCACOES.get(canal)
+        pasta_buffer = sessao.get("pasta") if sessao and sessao.get("estado") == "gravando" else ""
+        if sessao:
+            sessao["ultima_atividade"] = time.time()
+    if not pasta_buffer:
+        atualizar_job(job_id, estado="erro", msg="O buffer da live não está mais disponível.")
+        return
+    # Espera terminar o pós-roll; a folga fecha o último segmento de 5 segundos.
+    while time.time() < instante + 42:
+        atualizar_job(job_id, msg="Momento marcado. Aguardando o final dos 30 segundos... (%ds)" %
+                      max(0, int(instante + 42 - time.time())))
+        time.sleep(min(2, max(.2, instante + 42 - time.time())))
+    selecionados = []
+    try:
+        for nome in os.listdir(pasta_buffer):
+            inicio = _marcacao_timestamp(nome)
+            if inicio is not None and inicio < instante + 30 and inicio + 10 > instante - 30:
+                caminho = os.path.join(pasta_buffer, nome)
+                if os.path.isfile(caminho) and os.path.getsize(caminho) > 0:
+                    selecionados.append((inicio, caminho))
+    except OSError:
+        selecionados = []
+    selecionados.sort()
+    if len(selecionados) < 10:
+        atualizar_job(job_id, estado="erro", msg="Não consegui recuperar os 60 segundos completos. Tente marcar novamente.",
+                      diag="Segmentos disponíveis: %d" % len(selecionados))
+        return
+    bruto = os.path.join(pasta_job, "marcado_bruto.mp4")
+    lista = os.path.join(pasta_job, "segmentos.txt")
+    try:
+        with open(lista, "w", encoding="utf-8") as f:
+            for _, caminho in selecionados:
+                seguro = os.path.abspath(caminho).replace("'", "'\''")
+                f.write("file '%s'\n" % seguro)
+        cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+               "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", lista,
+               "-t", "60", "-c", "copy", "-movflags", "+faststart", bruto]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        if r.returncode != 0 or not clipe_valido(bruto, 50):
+            atualizar_job(job_id, estado="erro", msg="Não consegui montar o clipe desse momento.",
+                          diag=resumo_erro(r.stderr, r.returncode, 700) or "O vídeo ficou incompleto.")
+            _remover_arquivo(bruto)
+            return
+        saida = os.path.join(pasta_job, "clipe_000.mp4")
+        if formato == "vertical_blur":
+            ok, nota = converter_vertical(bruto, saida, formato)
+            _remover_arquivo(bruto)
+            if not ok:
+                atualizar_job(job_id, estado="erro", msg="O momento foi capturado, mas a conversão vertical falhou.", diag=nota)
+                return
+        else:
+            os.replace(bruto, saida)
+        if not clipe_valido(saida, 50):
+            _remover_arquivo(saida)
+            atualizar_job(job_id, estado="erro", msg="O clipe gerado ficou incompleto. Tente novamente.")
+            return
+        atualizar_job(job_id, estado="fim", clipes=1, info=[],
+                      msg="Clipe de 60 segundos pronto: 30 antes e 30 depois do momento marcado.", diag="")
+    except Exception as e:
+        _remover_arquivo(bruto)
+        atualizar_job(job_id, estado="erro", msg="Erro ao montar o clipe marcado.", diag=str(e)[-500:])
+    finally:
+        _remover_arquivo(lista)
+
 # ============================== ROTAS ==============================
 
 @app.route("/")
@@ -4255,6 +4552,74 @@ def admin_estatisticas():
     resp = Response(html, mimetype="text/html")
     resp.headers["X-Robots-Tag"] = "noindex, nofollow"
     return resp
+
+
+@app.route("/marcar/ativar", methods=["POST"])
+@limitar("marcar_ativar", 5)
+def ativar_marcacao():
+    dados = request.get_json(silent=True)
+    dados = dados if isinstance(dados, dict) else {}
+    url = normalizar_url_kick(str(dados.get("url", "")))
+    canal = slug_da_url(url)
+    if not canal:
+        return jsonify({"erro": "Cole o link de um canal da Kick que esteja ao vivo."}), 400
+    with _MARCACOES_LOCK:
+        atual = _MARCACOES.get(canal)
+        if atual and atual.get("estado") in ("fila", "abrindo", "gravando"):
+            atual["ultima_atividade"] = time.time()
+            return jsonify({"ok": True, "estado": atual.get("estado"), "msg": atual.get("msg", "")})
+        if atual and atual.get("pasta"):
+            shutil.rmtree(atual["pasta"], ignore_errors=True)
+        ativos = sum(1 for x in _MARCACOES.values() if x.get("estado") in ("fila", "abrindo", "gravando"))
+        if ativos >= MAX_CAPTURAS:
+            return jsonify({"erro": "O limite de marcações simultâneas foi atingido. Tente novamente mais tarde."}), 429
+        pasta = tempfile.mkdtemp(prefix="marcacao_", dir=BASE)
+        sessao = {"pasta": pasta, "estado": "fila", "msg": "Na fila para iniciar o buffer...",
+                  "inicio": 0.0, "ultima_atividade": time.time(), "proc": None, "diag": ""}
+        _MARCACOES[canal] = sessao
+    threading.Thread(target=_marcacao_capturar, args=(canal, url, sessao), daemon=True).start()
+    return jsonify({"ok": True, "estado": "fila"})
+
+
+@app.route("/marcar/status")
+@limitar("marcar_status", 60)
+def status_marcacao():
+    canal = str(request.args.get("canal", ""))
+    if not RE_SLUG.match(canal):
+        return jsonify({"erro": "Canal inválido."}), 400
+    with _MARCACOES_LOCK:
+        sessao = _MARCACOES.get(canal)
+        if not sessao:
+            return jsonify({"estado": "erro", "msg": "Ative a marcação para começar."}), 404
+        segundos = max(0, time.time() - sessao.get("inicio", time.time())) if sessao.get("inicio") else 0
+        return jsonify({"estado": sessao.get("estado"), "msg": sessao.get("msg", ""),
+                        "segundos": int(segundos), "diag": sessao.get("diag", "")})
+
+
+@app.route("/marcar/momento", methods=["POST"])
+@limitar("marcar_momento", 10)
+def marcar_momento():
+    dados = request.get_json(silent=True)
+    dados = dados if isinstance(dados, dict) else {}
+    canal = str(dados.get("canal", ""))
+    if not RE_SLUG.match(canal):
+        return jsonify({"erro": "Canal inválido."}), 400
+    with _MARCACOES_LOCK:
+        sessao = _MARCACOES.get(canal)
+        if not sessao or sessao.get("estado") != "gravando":
+            return jsonify({"erro": "Ative a marcação e aguarde o buffer ficar pronto."}), 409
+        segundos = time.time() - sessao.get("inicio", time.time())
+        if segundos < 32:
+            return jsonify({"erro": "Aguarde mais %d segundos para ter os 30 segundos anteriores." %
+                            max(1, int(32 - segundos))}), 409
+        sessao["ultima_atividade"] = time.time()
+    formato = str(dados.get("formato", "original"))
+    formato = formato if formato in FORMATOS else "original"
+    job_id, erro = criar_job("live", 1, tamanho_clipe=60, formato=formato, marcacao=True)
+    if erro:
+        return jsonify({"erro": erro}), 429
+    iniciar_thread(job_id, gravar_marcado, canal, formato, time.time())
+    return jsonify({"id": job_id})
 
 
 @app.route("/iniciar", methods=["POST"])
