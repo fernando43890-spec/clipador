@@ -5,10 +5,22 @@ Desenvolvimento:
     python app.py
 
 Produção (use 1 worker: os jobs ficam em memória, então vários workers não se enxergam):
-    gunicorn app:app --workers 1 --threads 8 --timeout 120
+    gunicorn app:app --workers 1 --threads 4 --timeout 120
 
 Arquivo único: o HTML da página está embutido na variável HTML.
 Precisa do ffmpeg (com ffprobe) instalado no sistema. Variáveis de ambiente opcionais: veja o LEIAME.md.
+
+Plano grátis do Railway (0,5 GB de RAM, 1 GB de disco): os padrões abaixo já vêm ajustados para isso.
+    CLIPADOR_MAX_CAPTURA_MIN=15   máximo de minutos da captura ao vivo.
+    CLIPADOR_COTA_CLIPES=15       clipes por visitante dentro da janela abaixo (0 = sem limite).
+    CLIPADOR_COTA_JANELA_MIN=60   tamanho da janela da cota, em minutos.
+    CLIPADOR_MAX_JOBS_DIA=100     tarefas aceitas por dia no site todo (0 = sem limite). Protege o crédito do mês.
+    CLIPADOR_MAX_SIMULTANEOS=2    tarefas de VOD/cortes ao mesmo tempo.
+    CLIPADOR_MAX_CAPTURAS=2       capturas ao vivo ao mesmo tempo (usam pouca CPU, só copiam o vídeo).
+    CLIPADOR_MAX_VERTICAL=1       conversões para vertical ao mesmo tempo (é o que mais gasta CPU e memória).
+    CLIPADOR_CACHE_CHAT_MIN=60    por quanto tempo guardar a análise do chat de uma live.
+    Estatísticas em /admin/estatisticas (mesma senha de /admin/feedbacks). Guardam só contagens e um código
+    irreversível do visitante, nunca o IP. Para não zerarem a cada reinício, aponte CLIPADOR_DADOS_DIR para um volume.
 
 Variáveis novas de segurança:
     CLIPADOR_PROXY=1|0        1 = confia no X-Forwarded-For (use só atrás de proxy/nginx/Render...). 0 = nunca.
@@ -22,6 +34,7 @@ Variáveis novas de segurança:
                               senão os feedbacks somem quando o servidor reinicia. Sem definir, usa CLIPADOR_DIR.
 """
 import base64
+import contextlib
 import functools
 import hashlib
 import json
@@ -36,6 +49,7 @@ import tempfile
 import threading
 import time
 import zipfile
+from array import array
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from html import escape
@@ -68,13 +82,19 @@ BASE = os.environ.get("CLIPADOR_DIR") or os.path.join(tempfile.gettempdir(), "cl
 os.makedirs(BASE, exist_ok=True)
 
 SEG = 60                                                    # duração padrão do clipe (s)
-MAX_CAPTURA_MIN = 60                                        # máximo de captura ao vivo
-MAX_SIMULTANEOS = _env_int("CLIPADOR_MAX_SIMULTANEOS", 3)   # ffmpeg/análises rodando ao mesmo tempo
+MAX_CAPTURA_MIN = max(1, _env_int("CLIPADOR_MAX_CAPTURA_MIN", 15))   # máximo de captura ao vivo
+MAX_SIMULTANEOS = max(1, _env_int("CLIPADOR_MAX_SIMULTANEOS", 2))    # análises de VOD/cortes rodando ao mesmo tempo
+MAX_CAPTURAS = max(1, _env_int("CLIPADOR_MAX_CAPTURAS", 2))          # capturas ao vivo (só copiam o vídeo: leves)
+MAX_VERTICAL = max(1, _env_int("CLIPADOR_MAX_VERTICAL", 1))          # conversões para vertical (as que mais pesam)
 MAX_ATIVOS_POR_IP = _env_int("CLIPADOR_MAX_POR_IP", 2)      # tarefas ativas por visitante
-MAX_ATIVOS_TOTAL = _env_int("CLIPADOR_MAX_FILA", 20)        # tarefas ativas no servidor todo (fila inclusa)
-VALIDADE_S = _env_int("CLIPADOR_VALIDADE_MIN", 120) * 60    # quanto tempo os arquivos ficam no servidor
+MAX_ATIVOS_TOTAL = _env_int("CLIPADOR_MAX_FILA", 10)        # tarefas ativas no servidor todo (fila inclusa)
+VALIDADE_S = _env_int("CLIPADOR_VALIDADE_MIN", 30) * 60     # quanto tempo os arquivos ficam no servidor
+COTA_CLIPES = _env_int("CLIPADOR_COTA_CLIPES", 15)          # clipes por visitante dentro da janela (0 = sem limite)
+COTA_JANELA_S = max(1, _env_int("CLIPADOR_COTA_JANELA_MIN", 60)) * 60
+MAX_JOBS_DIA = _env_int("CLIPADOR_MAX_JOBS_DIA", 100)       # tarefas por dia no site todo (0 = sem limite)
+CACHE_CHAT_S = _env_int("CLIPADOR_CACHE_CHAT_MIN", 60) * 60 # quanto tempo vale a análise do chat guardada
 CONTATO = os.environ.get("CLIPADOR_CONTATO", "").strip()    # e-mail para pedidos de remoção (aparece nos termos)
-MAX_DISCO_MB = _env_int("CLIPADOR_MAX_DISCO_MB", 4096)      # teto de espaço usado pelos clipes (0 = sem limite)
+MAX_DISCO_MB = _env_int("CLIPADOR_MAX_DISCO_MB", 700)      # teto de espaço usado pelos clipes (0 = sem limite)
 TESTE_ATIVO = os.environ.get("CLIPADOR_TESTE", "0") == "1"  # rota de diagnóstico /api/vod/teste
 ADMIN_SENHA = os.environ.get("CLIPADOR_ADMIN_SENHA", "").strip()   # senha da página /admin/feedbacks ("" = página desligada)
 DADOS = os.environ.get("CLIPADOR_DADOS_DIR") or BASE        # onde ficam os feedbacks (use um disco persistente)
@@ -115,7 +135,7 @@ CANAIS = [
 # vídeo vertical: 720x1280 por padrão (leve). Se o servidor tiver folga de memória, CLIPADOR_VERTICAL_ALTURA=1920 usa 1080x1920.
 VERT_H, VERT_W = (1920, 1080) if _env_int("CLIPADOR_VERTICAL_ALTURA", 1280) >= 1600 else (1280, 720)
 # O ffmpeg em container enxerga todos os núcleos do servidor e abre threads demais (isso estoura a memória). Limitamos.
-THREADS_FFMPEG = max(1, _env_int("CLIPADOR_FFMPEG_THREADS", 2))
+THREADS_FFMPEG = max(1, _env_int("CLIPADOR_FFMPEG_THREADS", 1))
 
 UA_NAV = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
           "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -2637,7 +2657,9 @@ PAGINA = _montar_pagina()
 
 JOBS = {}
 JOBS_LOCK = threading.Lock()
-VAGAS = threading.BoundedSemaphore(MAX_SIMULTANEOS)
+VAGAS = threading.BoundedSemaphore(MAX_SIMULTANEOS)           # análise de VOD e cortes
+VAGAS_CAPTURA = threading.BoundedSemaphore(MAX_CAPTURAS)      # captura ao vivo (copia o vídeo, quase não usa CPU)
+VAGAS_VERTICAL = threading.BoundedSemaphore(MAX_VERTICAL)     # cada reencode para vertical, um de cada vez
 
 
 # CSP da página: scripts e estilos só com o nonce desta resposta; único site externo permitido é o player da Kick.
@@ -2817,19 +2839,27 @@ def limitar(nome, maximo, janela_s=60):
 _DISCO = {"ate": 0.0, "bytes": 0}
 
 
+_DISCO_LOCK = threading.Lock()
+
+
 def _bytes_em_uso():
     agora = time.time()
     if agora < _DISCO["ate"]:
         return _DISCO["bytes"]
-    total = 0
-    for raiz, _, arquivos in os.walk(BASE):
-        for nome in arquivos:
-            try:
-                total += os.path.getsize(os.path.join(raiz, nome))
-            except OSError:
-                pass
-    _DISCO["bytes"], _DISCO["ate"] = total, agora + 10   # recalcula no máximo a cada 10 s
-    return total
+    if not _DISCO_LOCK.acquire(blocking=False):   # outra requisição já está somando: usa o último valor
+        return _DISCO["bytes"]
+    try:
+        total = 0
+        for raiz, _, arquivos in os.walk(BASE):
+            for nome in arquivos:
+                try:
+                    total += os.path.getsize(os.path.join(raiz, nome))
+                except OSError:
+                    pass
+        _DISCO["bytes"], _DISCO["ate"] = total, time.time() + 10   # recalcula no máximo a cada 10 s
+        return total
+    finally:
+        _DISCO_LOCK.release()
 
 
 def disco_cheio():
@@ -2928,6 +2958,224 @@ def slug_da_url(url):
 
 # ============================== JOBS ==============================
 
+# ============================== COTA, ORÇAMENTO, ESTATÍSTICAS E CACHE ==============================
+
+def _txt_janela():
+    m = COTA_JANELA_S // 60
+    return "por hora" if m == 60 else "a cada %d min" % m
+
+
+# ---------- cota de clipes por visitante (janela deslizante, em memória) ----------
+_COTA = {}   # ip -> [[instante, quantidade], ...] em ordem cronológica
+_COTA_LOCK = threading.Lock()
+
+
+def _cota_limpar_locked(ip, agora):
+    lista = [e for e in _COTA.get(ip, []) if agora - e[0] < COTA_JANELA_S]
+    if lista:
+        _COTA[ip] = lista
+    else:
+        _COTA.pop(ip, None)
+    return lista
+
+
+def cota_reservar(ip, qtd):
+    """Reserva `qtd` clipes para o visitante. Retorna (ok, usados_na_janela, segundos_até_liberar)."""
+    if COTA_CLIPES <= 0:
+        return True, 0, 0
+    agora = time.time()
+    with _COTA_LOCK:
+        if len(_COTA) > 20000:
+            for k in list(_COTA):
+                _cota_limpar_locked(k, agora)
+        lista = _cota_limpar_locked(ip, agora)
+        usados = sum(e[1] for e in lista)
+        if qtd > COTA_CLIPES:
+            return False, usados, 0
+        if usados + qtd > COTA_CLIPES:
+            precisa = usados + qtd - COTA_CLIPES   # quantos clipes antigos precisam "sair" da janela
+            acum, espera = 0, COTA_JANELA_S
+            for t, q in lista:
+                acum += q
+                if acum >= precisa:
+                    espera = int(t + COTA_JANELA_S - agora) + 1
+                    break
+            return False, usados, max(1, espera)
+        _COTA.setdefault(ip, []).append([agora, qtd])
+    return True, usados, 0
+
+
+def cota_devolver(ip, qtd):
+    """Devolve clipes reservados que não chegaram a ser gerados (falha ou menos clipes que o pedido)."""
+    if qtd <= 0 or COTA_CLIPES <= 0:
+        return
+    with _COTA_LOCK:
+        lista = _COTA.get(ip, [])
+        for e in reversed(lista):
+            if qtd <= 0:
+                break
+            tira = min(e[1], qtd)
+            e[1] -= tira
+            qtd -= tira
+        lista = [e for e in lista if e[1] > 0]
+        if lista:
+            _COTA[ip] = lista
+        else:
+            _COTA.pop(ip, None)
+
+
+def erro_cota(qtd, usados, espera):
+    if qtd > COTA_CLIPES:
+        return ("Esse pedido geraria %d clipes, mas o limite é de %d clipes %s por pessoa. Peça menos clipes."
+                % (qtd, COTA_CLIPES, _txt_janela()))
+    quando = "daqui a uns %d min" % max(1, (espera + 59) // 60)
+    livres = max(0, COTA_CLIPES - usados)
+    if livres > 0:
+        return ("Limite de %d clipes %s. Você ainda pode gerar %d agora; para pedir %d, tente %s."
+                % (COTA_CLIPES, _txt_janela(), livres, qtd, quando))
+    return "Você já gerou os %d clipes permitidos %s. Tente de novo %s." % (COTA_CLIPES, _txt_janela(), quando)
+
+
+# ---------- estatísticas simples (só contagens; o visitante vira um código irreversível) ----------
+ARQ_STATS = os.path.join(DADOS, "estatisticas.json")
+ARQ_SAL = os.path.join(DADOS, "estatisticas.sal")
+CAMPOS_STATS = ("visitas", "jobs_live", "jobs_vod", "jobs_mais", "clipes", "recusados")
+_STATS = {}                    # "AAAA-MM-DD" -> {campo: n, "unicos": set(códigos)}
+_STATS_LOCK = threading.Lock()
+_STATS_ARQ_LOCK = threading.Lock()
+_STATS_SALVO = [0.0]
+
+
+def _carregar_sal():
+    try:
+        with open(ARQ_SAL, encoding="utf-8") as f:
+            sal = f.read().strip()
+        if len(sal) >= 16:
+            return sal
+    except OSError:
+        pass
+    sal = secrets.token_hex(16)
+    try:
+        with open(ARQ_SAL, "w", encoding="utf-8") as f:
+            f.write(sal)
+    except OSError:
+        pass
+    return sal
+
+
+_SAL = _carregar_sal()
+
+
+def _dia_hoje():
+    return time.strftime("%Y-%m-%d", time.gmtime(time.time() - 3 * 3600))   # dia no horário de Brasília
+
+
+def _stats_dia_locked():
+    dia = _dia_hoje()
+    d = _STATS.get(dia)
+    if d is None:
+        d = {c: 0 for c in CAMPOS_STATS}
+        d["unicos"] = set()
+        _STATS[dia] = d
+        for velho in sorted(_STATS)[:-30]:   # guarda só os últimos 30 dias
+            del _STATS[velho]
+    return d
+
+
+def _stats_salvar(forcar=False):
+    agora = time.time()
+    with _STATS_LOCK:
+        if not forcar and agora - _STATS_SALVO[0] < 30:
+            return
+        _STATS_SALVO[0] = agora
+        copia = {dia: {**{k: v for k, v in d.items() if k != "unicos"}, "unicos": sorted(d["unicos"])}
+                 for dia, d in _STATS.items()}
+    with _STATS_ARQ_LOCK:
+        tmp = ARQ_STATS + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(copia, f)
+            os.replace(tmp, ARQ_STATS)
+        except OSError:
+            pass
+
+
+def _stats_carregar():
+    try:
+        with open(ARQ_STATS, encoding="utf-8") as f:
+            bruto = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(bruto, dict):
+        return
+    with _STATS_LOCK:
+        for dia, d in bruto.items():
+            try:
+                novo = {c: int(d.get(c, 0) or 0) for c in CAMPOS_STATS}
+                novo["unicos"] = set(str(x) for x in (d.get("unicos") or []))
+                _STATS[str(dia)] = novo
+            except Exception:
+                continue
+
+
+def stat_inc(campo, n=1):
+    if n <= 0:
+        return
+    with _STATS_LOCK:
+        _stats_dia_locked()[campo] += n
+    _stats_salvar()
+
+
+def stat_visita(ip):
+    codigo = hashlib.sha256(("%s|%s|%s" % (_SAL, _dia_hoje(), ip)).encode("utf-8")).hexdigest()[:12]
+    with _STATS_LOCK:
+        d = _stats_dia_locked()
+        d["visitas"] += 1
+        if len(d["unicos"]) < 50000:
+            d["unicos"].add(codigo)
+    _stats_salvar()
+
+
+def jobs_hoje():
+    with _STATS_LOCK:
+        d = _stats_dia_locked()
+        return d["jobs_live"] + d["jobs_vod"] + d["jobs_mais"]
+
+
+def orcamento_estourado():
+    """Teto diário de tarefas no site todo: evita gastar o crédito do mês em poucos dias."""
+    return MAX_JOBS_DIA > 0 and jobs_hoje() >= MAX_JOBS_DIA
+
+
+_stats_carregar()
+
+
+# ---------- cache da análise do chat (a parte mais cara de uma VOD) ----------
+_CACHE_CHAT = {}   # (canal, uuid, duração) -> (expira, array de tempos)
+_CACHE_CHAT_LOCK = threading.Lock()
+CACHE_CHAT_MAX = 4
+
+
+def cache_chat_get(chave):
+    agora = time.time()
+    with _CACHE_CHAT_LOCK:
+        item = _CACHE_CHAT.get(chave)
+        if item and item[0] > agora:
+            return list(item[1])
+        _CACHE_CHAT.pop(chave, None)
+    return None
+
+
+def cache_chat_set(chave, tempos):
+    if CACHE_CHAT_S <= 0 or not tempos:
+        return
+    with _CACHE_CHAT_LOCK:
+        _CACHE_CHAT[chave] = (time.time() + CACHE_CHAT_S, array("d", tempos))   # array: 8 bytes por mensagem
+        while len(_CACHE_CHAT) > CACHE_CHAT_MAX:
+            mais_velha = min(_CACHE_CHAT, key=lambda k: _CACHE_CHAT[k][0])
+            del _CACHE_CHAT[mais_velha]
+
+
 def atualizar_job(job_id, **campos):
     with JOBS_LOCK:
         j = JOBS.get(job_id)
@@ -2940,48 +3188,80 @@ def job_ativo(j):
     return j["estado"] not in ESTADOS_FINAIS
 
 
-def _checar_limites_locked(ip):
-    """Chamar com JOBS_LOCK. Retorna mensagem de erro ou ''."""
+def _checar_limites_locked(ip, disco_cheio_agora=False):
+    """Chamar com JOBS_LOCK. Retorna mensagem de erro ou ''. (O disco é medido antes, fora do lock.)"""
     ativos = [j for j in JOBS.values() if job_ativo(j)]
     if len(ativos) >= MAX_ATIVOS_TOTAL:
         return "O servidor está cheio agora. Tente de novo em alguns minutos."
     if sum(1 for j in ativos if j.get("ip") == ip) >= MAX_ATIVOS_POR_IP:
         return "Você já tem %d tarefas em andamento. Espere uma terminar." % MAX_ATIVOS_POR_IP
-    if disco_cheio():
+    if disco_cheio_agora:
         return "O servidor está sem espaço no momento. Tente de novo em alguns minutos."
     return ""
 
 
-def criar_job(**extra):
-    """Cria o job se couber nos limites. Retorna (job_id, erro)."""
+def criar_job(tipo, cota, **extra):
+    """Cria o job se couber nos limites e na cota de clipes do visitante. Retorna (job_id, erro).
+    tipo: "live" ou "vod". cota: quantos clipes este pedido deve gerar."""
     ip = ip_cliente()
+    if orcamento_estourado():
+        stat_inc("recusados")
+        return None, "O site atingiu o limite de uso de hoje. Volte amanhã."
+    cheio = disco_cheio()   # percorre a pasta de clipes: fica fora do lock para não travar o resto do site
+    erro, job_id = "", None
     with JOBS_LOCK:
-        erro = _checar_limites_locked(ip)
-        if erro:
-            return None, erro
-        job_id = secrets.token_urlsafe(16)   # 22 caracteres, 128 bits: quem não tem o link não acha o clipe
-        while job_id in JOBS:
-            job_id = secrets.token_urlsafe(16)
-        job = {
-            "estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": "", "pasta": "",
-            "info": [], "picos": [], "usados": 0, "stream": "", "headers": {},
-            "tamanho_clipe": SEG, "formato": "original",
-            "ip": ip, "atualizado": time.time(),
-        }
-        job.update(extra)
-        JOBS[job_id] = job
+        erro = _checar_limites_locked(ip, cheio)
+        if not erro:
+            ok, usados, espera = cota_reservar(ip, cota)
+            if not ok:
+                erro = erro_cota(cota, usados, espera)
+        if not erro:
+            job_id = secrets.token_urlsafe(16)   # 22 caracteres, 128 bits: quem não tem o link não acha o clipe
+            while job_id in JOBS:
+                job_id = secrets.token_urlsafe(16)
+            job = {
+                "estado": "iniciando", "msg": "Iniciando...", "clipes": 0, "diag": "", "pasta": "",
+                "info": [], "picos": [], "usados": 0, "stream": "", "headers": {},
+                "tamanho_clipe": SEG, "formato": "original",
+                "ip": ip, "atualizado": time.time(),
+                "cota": cota, "clipes_antes": 0,
+            }
+            job.update(extra)
+            JOBS[job_id] = job
+    if erro:
+        stat_inc("recusados")
+        return None, erro
+    stat_inc("jobs_" + tipo)
     return job_id, ""
 
 
+def _fechar_cota(job_id):
+    """No fim do job, devolve à cota do visitante os clipes que ele pediu e não recebeu; conta os gerados."""
+    with JOBS_LOCK:
+        j = JOBS.get(job_id)
+        if not j:
+            return
+        cota = int(j.pop("cota", 0) or 0)
+        ip = j.get("ip")
+        novos = max(0, int(j.get("clipes") or 0) - int(j.get("clipes_antes") or 0))
+    if cota:
+        cota_devolver(ip, max(0, cota - novos))
+    stat_inc("clipes", novos)
+
+
 def rodar_job(job_id, alvo, *args):
-    """Espera uma vaga, roda o trabalho e garante que o job nunca fique preso em 'gravando'."""
+    """Espera uma vaga, roda o trabalho e garante que o job nunca fique preso em 'gravando'.
+    A captura ao vivo usa vagas próprias (ela só copia o vídeo e quase não gasta CPU)."""
     atualizar_job(job_id, estado="fila", msg="Na fila... esperando uma vaga.")
+    vaga = VAGAS_CAPTURA if alvo is gravar else VAGAS
     try:
-        with VAGAS:
+        with vaga:
             alvo(job_id, *args)
     except Exception as e:
         log.exception("job %s falhou", job_id)
         atualizar_job(job_id, estado="erro", msg="Erro inesperado no servidor.", diag=str(e)[-300:])
+    finally:
+        _fechar_cota(job_id)
 
 
 def iniciar_thread(job_id, alvo, *args):
@@ -3050,6 +3330,7 @@ def _loop_limpeza():
         time.sleep(600)
         try:
             limpar_antigos()
+            _stats_salvar(True)
         except Exception:
             log.exception("a limpeza falhou")
 
@@ -3111,7 +3392,8 @@ def converter_vertical(entrada, saida, formato):
         cmd = ["ffmpeg", "-nostdin", "-y", "-threads", str(threads), "-i", entrada,
                *args_formato(formato, leve), saida]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            with VAGAS_VERTICAL:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         except subprocess.TimeoutExpired:
             _remover_arquivo(saida)
             erro = "demorou demais (mais de 15 min)"
@@ -3490,8 +3772,9 @@ def cortar_clipe(job_id, idx, ini, formato):
            *args_formato(formato),
            "-avoid_negative_ts", "make_zero", saida]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True,
-                           timeout=240 if formato == "original" else 600)
+        with (VAGAS_VERTICAL if formato != "original" else contextlib.nullcontext()):
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=240 if formato == "original" else 600)
     except subprocess.TimeoutExpired:
         _remover_arquivo(saida)
         return False, "demorou demais"
@@ -3583,7 +3866,16 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade, formato="original"):
                       diag=(resto + "\n" if resto else "") +
                            "Páginas consultadas: %d | amostras: início 1h, meio 2h, final 3h | live: %s" % (pags, escolhida["titulo"][:60]))
 
-    tempos, erro = baixar_chat_vod_amostrado(slug, inicio_epoch, dur, prog)
+    chave_chat = (slug, escolhida["uuid"], int(dur))
+    tempos = cache_chat_get(chave_chat)
+    erro = ""
+    if tempos is not None:
+        atualizar_job(job_id, estado="analisando", msg="Esse chat já foi analisado há pouco. Aproveitando...",
+                      diag="Resultado guardado de uma análise recente: não precisa ler o chat de novo.")
+    else:
+        tempos, erro = baixar_chat_vod_amostrado(slug, inicio_epoch, dur, prog)
+        if tempos:
+            cache_chat_set(chave_chat, tempos)
     if not tempos:
         atualizar_job(job_id, estado="erro", msg="Não consegui ler o chat dessa live.",
                       diag=erro or "Nenhuma mensagem encontrada no período.")
@@ -3666,6 +3958,7 @@ def _consultar_canal(c):
 
 @app.route("/")
 def inicio():
+    stat_visita(ip_cliente())
     g.nonce = secrets.token_urlsafe(16)   # novo a cada resposta: é ele que autoriza o script e o CSS da página
     pagina = PAGINA.replace("__NONCE__", g.nonce).replace("__OGIMG__", request.url_root + "logo.jpg")
     return Response(pagina, mimetype="text/html")
@@ -3685,18 +3978,48 @@ def fundo():
     return resp.make_conditional(request)
 
 
+_LIVES_REFRESH = threading.Lock()
+
+
+def _atualizar_lives():
+    with ThreadPoolExecutor(max_workers=min(6, len(CANAIS))) as ex:
+        dados = list(ex.map(_consultar_canal, CANAIS))
+    ok = any(x["status"] != "incerto" for x in dados)
+    with _LIVES_LOCK:
+        _LIVES_CACHE["dados"] = dados
+        _LIVES_CACHE["ate"] = time.time() + (30 if ok else 10)
+
+
 @app.route("/api/lives")
 @limitar("lives", 30)
 def api_lives():
-    """Quem está online. Uma consulta por 30s para todos os visitantes (e não uma por visitante)."""
+    """Quem está online. Uma consulta por 30s para todos os visitantes. Com o cache vencido, devolve o dado
+    anterior na hora e atualiza em segundo plano (ninguém fica esperando as consultas à Kick)."""
+    agora = time.time()
     with _LIVES_LOCK:
-        if _LIVES_CACHE["dados"] is None or time.time() > _LIVES_CACHE["ate"]:
-            with ThreadPoolExecutor(max_workers=len(CANAIS)) as ex:
-                dados = list(ex.map(_consultar_canal, CANAIS))
-            ok = any(x["status"] != "incerto" for x in dados)
-            _LIVES_CACHE["dados"] = dados
-            _LIVES_CACHE["ate"] = time.time() + (30 if ok else 10)
-        return jsonify({"canais": _LIVES_CACHE["dados"]})
+        dados, ate = _LIVES_CACHE["dados"], _LIVES_CACHE["ate"]
+    if dados is None or agora > ate + 300:
+        # primeira vez (ou cache muito velho, como depois de o site acordar): espera a consulta
+        with _LIVES_REFRESH:
+            with _LIVES_LOCK:
+                dados, ate = _LIVES_CACHE["dados"], _LIVES_CACHE["ate"]
+            if dados is None or time.time() > ate + 300:
+                try:
+                    _atualizar_lives()
+                except Exception:
+                    log.exception("falha ao consultar as lives")
+                with _LIVES_LOCK:
+                    dados = _LIVES_CACHE["dados"]
+    elif agora > ate and _LIVES_REFRESH.acquire(blocking=False):
+        def tarefa():
+            try:
+                _atualizar_lives()
+            except Exception:
+                log.exception("falha ao atualizar as lives")
+            finally:
+                _LIVES_REFRESH.release()
+        threading.Thread(target=tarefa, daemon=True).start()
+    return jsonify({"canais": dados or []})
 
 
 @app.route("/feedback", methods=["POST"])
@@ -3853,6 +4176,87 @@ def admin_feedbacks():
     return resp
 
 
+_STATS_HTML = """<!doctype html>
+<html lang="pt-br"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><meta name="color-scheme" content="dark">
+<title>Estatísticas – Clipador</title>
+<style nonce="__NONCE__">
+  body { margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+         background: linear-gradient(180deg, #0a2412 0, #050906 480px) #050906; color: #f7f7fb; line-height: 1.45; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 6px 0 10px; }
+  .card { background: #0c120e; border: 1px solid rgba(110,220,145,.18); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  .card b { color: #58e879; }
+  .rolar { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; white-space: nowrap; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.08); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #a9bbae; font-weight: 600; }
+  .peq { color: #a9bbae; font-size: .8rem; margin-top: 8px; }
+</style></head><body><main>
+<h1>Estatísticas</h1>
+<div class="card">__RESUMO__</div>
+<div class="card rolar"><table>
+<tr><th>Dia</th><th>Visitas</th><th>Visitantes</th><th>Ao vivo</th><th>Melhores mom.</th><th>Mais clipes</th><th>Clipes</th><th>Recusados</th></tr>
+__LINHAS__
+</table></div>
+<p class="peq">Dias no horário de Brasília. "Visitantes" conta pessoas diferentes por dia, sem guardar o IP. "Recusados" são pedidos barrados por limite.</p>
+</main></body></html>"""
+
+
+def _exigir_admin():
+    """None se a senha estiver certa; senão, a resposta a devolver."""
+    if not ADMIN_SENHA:
+        return Response("Não encontrado", status=404)
+    ip = ip_cliente()
+    espera = _admin_espera(ip)
+    if espera:
+        resp = Response("Muitas tentativas erradas. Espere %d min." % ((espera + 59) // 60), status=429)
+        resp.headers["Retry-After"] = str(espera)
+        return resp
+    auth = request.authorization
+    certo = bool(auth and auth.password and
+                 secrets.compare_digest(auth.password.encode("utf-8"), ADMIN_SENHA.encode("utf-8")))
+    if not certo:
+        _admin_falhou(ip)
+        return Response("Senha necessária.", status=401,
+                        headers={"WWW-Authenticate": 'Basic realm="Clipador", charset="UTF-8"'})
+    return None
+
+
+@app.route("/admin/estatisticas")
+def admin_estatisticas():
+    bloqueio = _exigir_admin()
+    if bloqueio is not None:
+        return bloqueio
+    with _STATS_LOCK:
+        _stats_dia_locked()
+        dias = sorted(_STATS, reverse=True)[:14]
+        tabela = [(dia, dict(_STATS[dia]), len(_STATS[dia]["unicos"])) for dia in dias]
+    with JOBS_LOCK:
+        ativos = sum(1 for j in JOBS.values() if job_ativo(j))
+    mb = _bytes_em_uso() // (1024 * 1024)
+    hoje = tabela[0][1] if tabela else {}
+    jobs = hoje.get("jobs_live", 0) + hoje.get("jobs_vod", 0) + hoje.get("jobs_mais", 0)
+    limite_dia = str(MAX_JOBS_DIA) if MAX_JOBS_DIA > 0 else "sem limite"
+    limite_disco = ("%d MB" % MAX_DISCO_MB) if MAX_DISCO_MB > 0 else "sem limite"
+    resumo = ("Hoje: <b>%d</b> visitas, <b>%d</b> visitantes, <b>%d</b> tarefas (limite do dia: %s).<br>"
+              "Agora: <b>%d</b> tarefas ativas, disco em uso: <b>%d MB</b> de %s."
+              % (hoje.get("visitas", 0), tabela[0][2] if tabela else 0, jobs, limite_dia, ativos, mb, limite_disco))
+    linhas = []
+    for dia, d, unicos in tabela:
+        linhas.append("<tr><td>%s</td><td>%d</td><td>%d</td><td>%d</td><td>%d</td><td>%d</td><td>%d</td><td>%d</td></tr>"
+                      % (escape(dia[8:10] + "/" + dia[5:7]), d["visitas"], unicos, d["jobs_live"], d["jobs_vod"],
+                         d["jobs_mais"], d["clipes"], d["recusados"]))
+    g.nonce = secrets.token_urlsafe(16)
+    html = (_STATS_HTML.replace("__NONCE__", g.nonce).replace("__RESUMO__", resumo)
+            .replace("__LINHAS__", "\n".join(linhas)))
+    resp = Response(html, mimetype="text/html")
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
 @app.route("/iniciar", methods=["POST"])
 @limitar("iniciar", 8)
 def iniciar():
@@ -3867,7 +4271,8 @@ def iniciar():
     seg = ler_seg(dados)
     formato = ler_formato(dados)
 
-    job_id, erro = criar_job(tamanho_clipe=seg, formato=formato)
+    cota = int(math.ceil(minutos * 60 / seg))   # 1 clipe por trecho de `seg` segundos
+    job_id, erro = criar_job("live", cota, tamanho_clipe=seg, formato=formato)
     if erro:
         return jsonify({"id": "", "erro": erro}), 429
     iniciar_thread(job_id, gravar, url, minutos, seg, formato)
@@ -3887,7 +4292,7 @@ def iniciar_vod():
     qtd = max(1, min(ler_numero(dados.get("qtd", 5), 5), 15))
     formato = ler_formato(dados)
 
-    job_id, erro = criar_job(tamanho_clipe=seg, formato=formato)
+    job_id, erro = criar_job("vod", qtd, tamanho_clipe=seg, formato=formato)
     if erro:
         return jsonify({"id": "", "erro": erro}), 429
     iniciar_thread(job_id, gravar_vod, url, seg, qtd, formato)
@@ -3902,6 +4307,10 @@ def mais_clipes(job_id):
     dados = dados if isinstance(dados, dict) else {}
     qtd = max(1, min(ler_numero(dados.get("qtd", 5), 5), 15))
     ip = ip_cliente()
+    if orcamento_estourado():
+        stat_inc("recusados")
+        return jsonify({"erro": "O site atingiu o limite de uso de hoje. Volte amanhã."}), 429
+    cheio = disco_cheio()   # fora do lock
 
     with JOBS_LOCK:
         j = JOBS.get(job_id)
@@ -3913,9 +4322,14 @@ def mais_clipes(job_id):
         restantes = j["picos"][usados:usados + qtd]
         if not restantes:
             return jsonify({"erro": "Acabaram os momentos de destaque dessa live."}), 404
-        erro = _checar_limites_locked(ip)
+        erro = _checar_limites_locked(ip, cheio)
         if erro:
             return jsonify({"erro": erro}), 429
+        ok, usados_cota, espera = cota_reservar(ip, len(restantes))
+        if not ok:
+            return jsonify({"erro": erro_cota(len(restantes), usados_cota, espera)}), 429
+        j["cota"] = len(restantes)
+        j["clipes_antes"] = int(j.get("clipes") or 0)
         j["usados"] = usados + len(restantes)
         j["estado"] = "fila"
         j["msg"] = "Cortando mais %d clipes..." % len(restantes)
@@ -3923,6 +4337,7 @@ def mais_clipes(job_id):
         j["atualizado"] = time.time()
         formato = j["formato"]
 
+    stat_inc("jobs_mais")
     iniciar_thread(job_id, cortar_lote, sorted(restantes), formato)
     return jsonify({"id": job_id, "novos": len(restantes)})
 
