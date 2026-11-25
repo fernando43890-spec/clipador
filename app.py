@@ -3385,11 +3385,11 @@ def extrair_stream(url):
 
 
 # ============================== LAYOUT VERTICAL COM WEBCAM ==============================
-# Webcam em cima, faixa vermelha com título no meio e a tela do jogo embaixo (720x1280), com a marca do site.
+# Webcam em cima, faixa verde com texto branco no meio e a tela do jogo embaixo (720x1280), com a marca do site.
 LV_W, LV_H = 720, 1280
 LV_CAM, LV_BANDA = 400, 150
 LV_JOGO = LV_H - LV_CAM - LV_BANDA
-COR_BANDA = "0xE02A1F"
+COR_BANDA = "0x58E879"  # verde principal do site
 
 # Fonte Poppins Bold (SIL Open Font License 1.1), reduzida às letras latinas, e a marca do site em círculo.
 _FONTE_B64 = (
@@ -4098,9 +4098,9 @@ def _filtros_faixa(canal, idx):
     comuns = "fontfile='%s':expansion=none:x=(w-text_w)/2" % fonte
     filtros = []
     for k, linha in enumerate(linhas):
-        filtros.append("drawtext=%s:text='%s':fontsize=%d:fontcolor=0xA6FFC0:borderw=3:bordercolor=black:y=%.0f"
+        filtros.append("drawtext=%s:text='%s':fontsize=%d:fontcolor=white:borderw=3:bordercolor=black:y=%.0f"
                        % (comuns, _esc_filtro(linha), tam, topo + k * tam * 1.2))
-    filtros.append("drawtext=%s:text='%s':fontsize=%d:fontcolor=0xA6FFC0:borderw=2:bordercolor=black:y=%.0f"
+    filtros.append("drawtext=%s:text='%s':fontsize=%d:fontcolor=white:borderw=2:bordercolor=black:y=%.0f"
                    % (comuns, _esc_filtro(gancho), tam_gancho, topo + alt_titulo + 10))
     return ",".join(filtros)
 
