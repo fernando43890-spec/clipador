@@ -50,7 +50,6 @@ import textwrap
 import threading
 import time
 import zipfile
-from array import array
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from html import escape
@@ -1608,7 +1607,7 @@ HTML = r"""
   .fmt-prev i { position: absolute; inset: 0; background: linear-gradient(110deg, var(--verde-esc), var(--verde)); }
   .fmt-cel[data-fmt="vertical_blur"] .fmt-prev { width: 34px; height: 60px; background: linear-gradient(160deg, rgba(24, 136, 63, .5), rgba(88, 232, 121, .4)); }
   .fmt-cel[data-fmt="vertical_blur"] .fmt-prev i { top: 34%; bottom: 34%; }
-  .fmt-cel[data-fmt="vertical_webcam"] .fmt-prev { width: 34px; height: 60px; background: linear-gradient(180deg, rgba(88, 232, 121, .45) 0 36%, rgba(224, 42, 31, .9) 36% 52%, rgba(24, 136, 63, .5) 52%); }
+  .fmt-cel[data-fmt="vertical_webcam"] .fmt-prev { width: 34px; height: 60px; background: linear-gradient(180deg, rgba(88, 232, 121, .45) 0 36%, rgba(88, 232, 121, .95) 36% 52%, rgba(24, 136, 63, .5) 52%); }
   .fmt-cel[data-fmt="vertical_webcam"] .fmt-prev i { display: none; }
 
   button { font: inherit; }
@@ -1864,7 +1863,7 @@ HTML = r"""
               <select id="formato">
                 <option value="original" selected>Horizontal</option>
                 <option value="vertical_blur">Vertical (desfocado)</option>
-                <option value="vertical_webcam">Vertical com webcam e título</option>
+                <option value="vertical_webcam">Vertical com webcam e frase do chat</option>
               </select>
             </div>
           </div>
@@ -3172,7 +3171,7 @@ _stats_carregar()
 
 
 # ---------- cache da análise do chat (a parte mais cara de uma VOD) ----------
-_CACHE_CHAT = {}   # (canal, uuid, duração) -> (expira, array de tempos)
+_CACHE_CHAT = {}   # (canal, uuid, duração) -> (expira, mensagens com tempo e texto)
 _CACHE_CHAT_LOCK = threading.Lock()
 CACHE_CHAT_MAX = 4
 
@@ -3182,16 +3181,19 @@ def cache_chat_get(chave):
     with _CACHE_CHAT_LOCK:
         item = _CACHE_CHAT.get(chave)
         if item and item[0] > agora:
-            return list(item[1])
+            return [dict(m) for m in item[1]]
         _CACHE_CHAT.pop(chave, None)
     return None
 
 
-def cache_chat_set(chave, tempos):
-    if CACHE_CHAT_S <= 0 or not tempos:
+def cache_chat_set(chave, mensagens):
+    if CACHE_CHAT_S <= 0 or not mensagens:
         return
+    # Guarda só o necessário para montar as legendas dos clipes.
+    compactas = [{"t": float(m["t"]), "texto": str(m.get("texto") or "")[:250]}
+                 for m in mensagens if isinstance(m, dict) and m.get("texto")]
     with _CACHE_CHAT_LOCK:
-        _CACHE_CHAT[chave] = (time.time() + CACHE_CHAT_S, array("d", tempos))   # array: 8 bytes por mensagem
+        _CACHE_CHAT[chave] = (time.time() + CACHE_CHAT_S, compactas)
         while len(_CACHE_CHAT) > CACHE_CHAT_MAX:
             mais_velha = min(_CACHE_CHAT, key=lambda k: _CACHE_CHAT[k][0])
             del _CACHE_CHAT[mais_velha]
@@ -4077,35 +4079,33 @@ def _esc_filtro(txt):
     return str(txt).replace("\\", "\\\\").replace("'", "'\\''").replace(":", "\\:")
 
 
-def _texto_faixa(canal, idx):
-    nome = (canal or "O STREAMER").upper().replace("_", " ").replace("-", " ")[:16]
-    titulo, gancho = _TITULOS[int(idx) % len(_TITULOS)]
-    return titulo.replace("{N}", nome), gancho
+def _texto_faixa(canal, idx, frase=None):
+    # A legenda principal vem do chat do intervalo do clipe; não inventa chamadas genéricas.
+    if frase:
+        return str(frase).strip()[:100], ""
+    return "MENSAGEM DO CHAT", ""
 
 
-def _filtros_faixa(canal, idx):
-    """drawtext do título (até 2 linhas, ajustando o tamanho) e do gancho, centralizados na faixa."""
-    titulo, gancho = _texto_faixa(canal, idx)
-    for tam in (42, 36, 30):
-        linhas = textwrap.wrap(titulo, max(8, int(650 / (0.70 * tam))))
+def _filtros_faixa(canal, idx, frase=None):
+    """Desenha a frase real do chat em até duas linhas, centralizada na faixa verde."""
+    titulo, gancho = _texto_faixa(canal, idx, frase)
+    for tam in (42, 36, 30, 26):
+        linhas = textwrap.wrap(titulo, max(8, int(650 / (0.70 * tam)))) or [titulo]
         if len(linhas) <= 2:
             break
     linhas = linhas[:2]
-    tam_gancho = 24
     alt_titulo = len(linhas) * tam * 1.2
-    topo = max(6, (LV_BANDA - (alt_titulo + 10 + tam_gancho)) / 2)
+    topo = max(6, (LV_BANDA - alt_titulo) / 2)
     fonte = _esc_filtro(FONTE_TITULO)
     comuns = "fontfile='%s':expansion=none:x=(w-text_w)/2" % fonte
     filtros = []
     for k, linha in enumerate(linhas):
         filtros.append("drawtext=%s:text='%s':fontsize=%d:fontcolor=white:borderw=3:bordercolor=black:y=%.0f"
                        % (comuns, _esc_filtro(linha), tam, topo + k * tam * 1.2))
-    filtros.append("drawtext=%s:text='%s':fontsize=%d:fontcolor=white:borderw=2:bordercolor=black:y=%.0f"
-                   % (comuns, _esc_filtro(gancho), tam_gancho, topo + alt_titulo + 10))
     return ",".join(filtros)
 
 
-def _grafo_webcam(canal, idx):
+def _grafo_webcam(canal, idx, frase=None):
     cx, cy, cw, ch = webcam_do_canal(canal)
     cam = ("crop=iw*%.4f:ih*%.4f:iw*%.4f:ih*%.4f,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d"
            % (cw, ch, cx, cy, LV_W, LV_CAM, LV_W, LV_CAM))
@@ -4116,7 +4116,7 @@ def _grafo_webcam(canal, idx):
         x = "min(iw-%s,max((iw-%s)/2,iw*%.4f))" % (larg, larg, cx + cw)
     jogo = "crop=w='%s':h=ih:x='%s':y=0,scale=%d:%d" % (larg, x, LV_W, LV_JOGO)
     banda = ("scale=16:16,scale=%d:%d,drawbox=x=0:y=0:w=%d:h=%d:color=%s:t=fill,%s"
-             % (LV_W, LV_BANDA, LV_W, LV_BANDA, COR_BANDA, _filtros_faixa(canal, idx)))
+             % (LV_W, LV_BANDA, LV_W, LV_BANDA, COR_BANDA, _filtros_faixa(canal, idx, frase)))
     return (
         "[0:v]fps=30,split=3[s1][s2][s3];"
         "[s1]%s[cam];[s2]%s[banda];[s3]%s[jogo];"
@@ -4129,12 +4129,12 @@ def _grafo_webcam(canal, idx):
 _preparar_layout_webcam()
 
 
-def args_formato(formato, leve=False, canal=None, idx=0):
+def args_formato(formato, leve=False, canal=None, idx=0, frase=None):
     """Argumentos de vídeo do ffmpeg. 'original' só copia; os verticais reencodam em 9:16 a 30 fps.
     leve=True: 540x960, preset ultrafast e 1 thread (plano B quando o servidor não aguenta)."""
     formato = formato_efetivo(formato, canal)
     if formato == "vertical_webcam" and not leve:
-        return ["-filter_complex", _grafo_webcam(canal, idx),
+        return ["-filter_complex", _grafo_webcam(canal, idx, frase),
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
                 "-threads", str(THREADS_FFMPEG), "-filter_threads", "1", "-filter_complex_threads", "1"]
@@ -4154,8 +4154,10 @@ def args_formato(formato, leve=False, canal=None, idx=0):
             "[fundo]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=4:1,"
             "scale=%d:%d:flags=bilinear[bg];"
             "[frente]scale=%d:-2[fg];"
-            "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p"
-        ) % (pw, ph, pw, ph, w, h, w)
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,"
+            "drawbox=x=0:y=(h-%d)/2:w=w:h=%d:color=%s:t=fill,%s,format=yuv420p"
+        ) % (pw, ph, pw, ph, w, h, w, LV_BANDA, LV_BANDA, COR_BANDA,
+             _filtros_faixa(canal, idx, frase))
         return ["-filter_complex", filtro, *codec]
     return ["-c", "copy"]
 
@@ -4392,7 +4394,7 @@ def iso_para_epoch(txt):
 
 
 def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
-    """Percorre o chat de trás pra frente a partir do fim da VOD. Retorna (segundos relativos, erro)."""
+    """Percorre o chat da VOD. Retorna mensagens com segundo relativo e texto."""
     canal, erro = kick_get_json("https://kick.com/api/v2/channels/%s" % quote(canal_slug))
     if not canal or "id" not in canal:
         return [], "não consegui o id do canal (%s)" % erro
@@ -4400,7 +4402,7 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
 
     fim_epoch = inicio_epoch + duracao_s
     cursor = str(int(fim_epoch * 1_000_000))
-    tempos, vistos = [], set()
+    mensagens, vistos = [], set()
     paginas, sem_novas = 0, 0
     while paginas < 4000:
         url = "https://kick.com/api/v2/channels/%s/messages?cursor=%s" % (cid, cursor)
@@ -4412,7 +4414,7 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
             time.sleep(5 * tentativas)
             dados, erro = kick_get_json(url)
         if dados is None:
-            return tempos, ("falha na página %d: %s" % (paginas, erro)) if not tempos else ""
+            return mensagens, ("falha na página %d: %s" % (paginas, erro)) if not mensagens else ""
         bloco = dados.get("data") or {}
         msgs = bloco.get("messages") or []
         novas = 0
@@ -4427,12 +4429,16 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
                 continue
             menor = t if menor is None else min(menor, t)
             if inicio_epoch <= t <= fim_epoch:
-                tempos.append(t - inicio_epoch)
+                conteudo = m.get("content") or m.get("message") or m.get("text") or ""
+                if isinstance(conteudo, dict):
+                    conteudo = conteudo.get("content") or conteudo.get("text") or ""
+                conteudo = re.sub(r"\s+", " ", str(conteudo)).strip()[:250]
+                mensagens.append({"t": round(t - inicio_epoch, 3), "texto": conteudo})
                 novas += 1
         paginas += 1
         proximo = bloco.get("cursor")
         if progresso and (paginas == 1 or paginas % 10 == 0):
-            progresso(paginas, len(tempos), menor)
+            progresso(paginas, len(mensagens), menor)
         if not proximo or not msgs:
             break
         if menor is not None and menor < inicio_epoch:
@@ -4442,7 +4448,7 @@ def baixar_chat_vod(canal_slug, inicio_epoch, duracao_s, progresso=None):
             break
         cursor = str(proximo)
         time.sleep(0.1)
-    return tempos, ""
+    return mensagens, ""
 
 
 def _intervalos_amostra(duracao_s):
@@ -4470,7 +4476,7 @@ def baixar_chat_vod_amostrado(canal_slug, inicio_epoch, duracao_s, progresso=Non
         return [], "duração inválida"
     intervalos = _intervalos_amostra(duracao_s)
     total_s = float(sum(b - a for a, b in intervalos)) or 1.0
-    todos = set()
+    todos = {}
     erros = []
     paginas_antes = 0
     lido_antes = 0
@@ -4488,14 +4494,47 @@ def baixar_chat_vod_amostrado(canal_slug, inicio_epoch, duracao_s, progresso=Non
                 frac = min(1.0, (lido_antes + (b - rel)) / total_s)
             progresso(paginas_antes + pags, len(todos) + msgs, frac)
 
-        tempos, erro = baixar_chat_vod(canal_slug, inicio_epoch + a, b - a, prog)
-        todos.update(round(a + t, 3) for t in tempos)
+        mensagens, erro = baixar_chat_vod(canal_slug, inicio_epoch + a, b - a, prog)
+        for m in mensagens:
+            registro = {"t": round(a + float(m.get("t", 0)), 3), "texto": str(m.get("texto") or "")[:250]}
+            chave = (registro["t"], registro["texto"])
+            todos[chave] = registro
         paginas_antes += ultimas["pags"]
         lido_antes += b - a
         if erro:
             erros.append(erro)
-    return sorted(todos), ("; ".join(erros) if erros and not todos else "")
+    resultado = sorted(todos.values(), key=lambda m: m["t"])
+    return resultado, ("; ".join(erros) if erros and not resultado else "")
 
+
+
+def frase_mais_repetida_chat(mensagens, inicio, fim):
+    """Escolhe a mensagem mais repetida dentro do intervalo do clipe."""
+    grupos = {}
+    for m in mensagens or []:
+        try:
+            t = float(m.get("t", -1))
+        except (TypeError, ValueError):
+            continue
+        if not (inicio <= t <= fim):
+            continue
+        original = re.sub(r"\s+", " ", str(m.get("texto") or "")).strip()
+        # Evita exibir links, mensagens vazias e spam de um único caractere.
+        limpo = re.sub(r"https?://\S+", "", original, flags=re.I).strip()
+        chave = re.sub(r"[^\wÀ-ÿ]+", " ", limpo.lower(), flags=re.UNICODE).strip()
+        if len(chave) < 3:
+            continue
+        if chave not in grupos:
+            grupos[chave] = {"qtd": 0, "texto": limpo}
+        grupos[chave]["qtd"] += 1
+    if not grupos:
+        return "SEM MENSAGENS NO CHAT"
+    # Mais repetida primeiro; em empate, prefere uma frase que comunique algo.
+    melhor = max(grupos.values(), key=lambda g: (g["qtd"], min(len(g["texto"]), 90)))
+    frase = melhor["texto"]
+    if len(frase) > 100:
+        frase = frase[:97].rsplit(" ", 1)[0] + "..."
+    return frase.upper()
 
 def achar_picos(tempos, duracao_s, quantidade, tamanho_clipe):
     """Janela deslizante de 30s; pega os maiores picos sem sobrepor.
@@ -4534,7 +4573,7 @@ def stream_da_vod(slug, uuid_):
     return extrair_stream("https://kick.com/%s/videos/%s" % (slug, uuid_))
 
 
-def cortar_clipe(job_id, idx, ini, formato):
+def cortar_clipe(job_id, idx, ini, formato, frase=None):
     """Corta um clipe da VOD usando os dados guardados no job. idx começa em 0."""
     with JOBS_LOCK:
         j = JOBS[job_id]
@@ -4549,7 +4588,7 @@ def cortar_clipe(job_id, idx, ini, formato):
            "-rw_timeout", "20000000",
            *(["-threads", str(THREADS_FFMPEG)] if formato != "original" else []),
            "-ss", str(int(ini)), "-i", stream, "-t", str(tam),
-           *args_formato(formato, canal=canal, idx=idx),
+           *args_formato(formato, canal=canal, idx=idx, frase=frase),
            "-avoid_negative_ts", "make_zero", saida]
     try:
         with (VAGAS_VERTICAL if formato != "original" else contextlib.nullcontext()):
@@ -4569,12 +4608,14 @@ def cortar_lote(job_id, lote, formato):
     mesmo se algum corte falhar (o próximo reaproveita o número)."""
     with JOBS_LOCK:
         tam = JOBS[job_id]["tamanho_clipe"]
+        mensagens_chat = list(JOBS[job_id].get("chat_mensagens") or [])
         info = list(JOBS[job_id]["info"])
         feitos = JOBS[job_id]["clipes"]
     notas = []
     novos = 0
     for k, (ini, score) in enumerate(lote):
-        ok, nota = cortar_clipe(job_id, feitos, ini, formato)
+        frase = frase_mais_repetida_chat(mensagens_chat, ini, ini + tam)
+        ok, nota = cortar_clipe(job_id, feitos, ini, formato, frase=frase)
         if ok:
             feitos += 1
             novos += 1
@@ -4648,21 +4689,22 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade, formato="original"):
                            "Páginas consultadas: %d | amostras: início 1h, meio 2h, final 3h | live: %s" % (pags, escolhida["titulo"][:60]))
 
     chave_chat = (slug, escolhida["uuid"], int(dur))
-    tempos = cache_chat_get(chave_chat)
+    mensagens_chat = cache_chat_get(chave_chat)
     erro = ""
-    if tempos is not None:
+    if mensagens_chat is not None:
         atualizar_job(job_id, estado="analisando", msg="Esse chat já foi analisado há pouco. Aproveitando...",
-                      diag="Resultado guardado de uma análise recente: não precisa ler o chat de novo.")
+                      diag="Mensagens e horários recuperados do cache.")
     else:
-        tempos, erro = baixar_chat_vod_amostrado(slug, inicio_epoch, dur, prog)
-        if tempos:
-            cache_chat_set(chave_chat, tempos)
-    if not tempos:
+        mensagens_chat, erro = baixar_chat_vod_amostrado(slug, inicio_epoch, dur, prog)
+        if mensagens_chat:
+            cache_chat_set(chave_chat, mensagens_chat)
+    if not mensagens_chat:
         atualizar_job(job_id, estado="erro", msg="Não consegui ler o chat dessa live.",
                       diag=erro or "Nenhuma mensagem encontrada no período.")
         return
 
     # guarda até 60 picos, do mais forte ao mais fraco
+    tempos = [m["t"] for m in mensagens_chat if isinstance(m, dict) and "t" in m]
     ranking = achar_picos(tempos, dur, 60, tamanho_clipe)
     if not ranking:
         atualizar_job(job_id, estado="erro", msg="Não achei momentos de destaque no chat.", diag="")
@@ -4684,8 +4726,9 @@ def gravar_vod(job_id, url, tamanho_clipe, quantidade, formato="original"):
 
     atualizar_job(job_id, estado="gravando",
                   msg="Achei %d momentos. Cortando..." % len(primeiros),
-                  diag="Chat: %d mensagens analisadas" % len(tempos),
-                  picos=ranking, usados=len(primeiros), stream=stream, headers=headers)
+                  diag="Chat: %d mensagens analisadas; texto disponível para as legendas." % len(mensagens_chat),
+                  picos=ranking, usados=len(primeiros), stream=stream, headers=headers,
+                  chat_mensagens=mensagens_chat)
 
     cortar_lote(job_id, primeiros, formato)
 
