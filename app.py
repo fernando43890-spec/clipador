@@ -67,6 +67,12 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("clipador")
 
+# Transcrição local e gratuita com whisper.cpp (não usa chave nem envia áudio a terceiros).
+WHISPER_CPP_BIN = os.environ.get("CLIPADOR_WHISPER_BIN", "whisper-cli").strip() or "whisper-cli"
+WHISPER_CPP_MODELO = os.environ.get(
+    "CLIPADOR_WHISPER_MODELO", "/app/models/ggml-tiny-q5_1.bin"
+).strip()
+
 
 # ============================== CONFIGURAÇÃO ==============================
 
@@ -4603,6 +4609,101 @@ def cortar_clipe(job_id, idx, ini, formato, frase=None):
     return False, resumo_erro(r.stderr, r.returncode, 250)
 
 
+def _pontuar_fala_streamer(texto):
+    """Heurística conservadora para preferir falas completas e expressivas."""
+    t = re.sub(r"\s+", " ", str(texto or "")).strip()
+    if len(t) < 12:
+        return -1
+    palavras = re.findall(r"\w+", t, flags=re.UNICODE)
+    if len(palavras) < 3:
+        return -1
+    score = min(len(palavras), 18) * 0.25
+    score += min(len(t), 120) / 120
+    score += sum(1.4 for c in "!?" if c in t)
+    termos = ("caralho", "inacreditável", "impossível", "nunca", "agora", "ganhei",
+              "perdi", "mentira", "sério", "olha", "calma", "meu deus", "não é possível",
+              "que isso", "acabou", "consegui", "vingança", " absurdo")
+    tl = t.lower()
+    score += sum(1.0 for termo in termos if termo in tl)
+    # Penaliza transcrições muito longas: a tarja precisa ser curta e legível.
+    if len(t) > 115:
+        score -= (len(t) - 115) / 35
+    return score
+
+
+def frase_impactante_streamer(job, ini, duracao):
+    """Extrai o áudio do clipe e transcreve localmente com whisper.cpp.
+
+    Não usa OPENAI_API_KEY, não envia áudio para serviços externos e não gera
+    cobrança por transcrição. Se o binário/modelo não estiver instalado ou não
+    houver fala aproveitável, retorna string vazia para usar o chat como fallback.
+    """
+    pasta, stream = job.get("pasta"), job.get("stream")
+    headers = job.get("headers") or {}
+    if not pasta or not stream:
+        return ""
+    if not WHISPER_CPP_MODELO or not os.path.isfile(WHISPER_CPP_MODELO):
+        log.info("Modelo local do Whisper não encontrado; usando frase do chat.")
+        return ""
+
+    fd, audio_path = tempfile.mkstemp(prefix="fala_", suffix=".wav", dir=pasta)
+    os.close(fd)
+    prefixo_json = os.path.join(pasta, "transcricao_" + secrets.token_hex(5))
+    json_path = prefixo_json + ".json"
+    try:
+        user_agent, extra = cabecalhos_ffmpeg(headers)
+        cmd_audio = ["ffmpeg", "-nostdin", "-y", "-user_agent", user_agent, *extra,
+                     "-protocol_whitelist", PROTOCOLOS, "-rw_timeout", "20000000",
+                     "-ss", str(max(0, int(ini))), "-i", stream, "-t", str(int(duracao)),
+                     "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio_path]
+        r = subprocess.run(cmd_audio, capture_output=True, text=True, timeout=120)
+        if r.returncode != 0 or not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+            log.warning("Não foi possível extrair áudio para transcrição: %s",
+                        resumo_erro(r.stderr, r.returncode, 180))
+            return ""
+
+        cmd_whisper = [WHISPER_CPP_BIN, "-m", WHISPER_CPP_MODELO, "-f", audio_path,
+                       "-l", "pt", "-oj", "-of", prefixo_json, "-nt", "-np"]
+        r = subprocess.run(cmd_whisper, capture_output=True, text=True, timeout=180)
+        if r.returncode != 0 or not os.path.isfile(json_path):
+            log.warning("whisper.cpp indisponível ou falhou: %s",
+                        resumo_erro(r.stderr, r.returncode, 180))
+            return ""
+
+        with open(json_path, "r", encoding="utf-8") as arq:
+            dados = json.load(arq)
+
+        segmentos = dados.get("transcription") or dados.get("segments") or []
+        candidatos = []
+        for seg in segmentos:
+            texto = re.sub(r"\s+", " ", str(seg.get("text") or "")).strip(" .,-")
+            score = _pontuar_fala_streamer(texto)
+            if score > 0:
+                candidatos.append((score, texto))
+
+        if not candidatos:
+            texto = re.sub(r"\s+", " ", str(dados.get("text") or "")).strip()
+            score = _pontuar_fala_streamer(texto)
+            if score > 0:
+                candidatos.append((score, texto))
+        if not candidatos:
+            return ""
+
+        frase = max(candidatos, key=lambda x: x[0])[1]
+        if len(frase) > 100:
+            frase = frase[:97].rsplit(" ", 1)[0] + "..."
+        return frase.upper()
+    except subprocess.TimeoutExpired:
+        log.warning("A transcrição local do streamer excedeu o tempo limite.")
+        return ""
+    except Exception as exc:
+        log.warning("Transcrição local indisponível; usando chat como alternativa: %s", exc)
+        return ""
+    finally:
+        _remover_arquivo(audio_path)
+        _remover_arquivo(json_path)
+
+
 def cortar_lote(job_id, lote, formato):
     """Corta uma lista de (inicio_s, msgs). Os números dos clipes seguem sempre em sequência,
     mesmo se algum corte falhar (o próximo reaproveita o número)."""
@@ -4613,8 +4714,13 @@ def cortar_lote(job_id, lote, formato):
         feitos = JOBS[job_id]["clipes"]
     notas = []
     novos = 0
+    with JOBS_LOCK:
+        job_transcricao = dict(JOBS[job_id])
     for k, (ini, score) in enumerate(lote):
-        frase = frase_mais_repetida_chat(mensagens_chat, ini, ini + tam)
+        # Prioridade: fala impactante do streamer; fallback: frase mais repetida no chat.
+        frase = frase_impactante_streamer(job_transcricao, ini, tam) if formato != "original" else ""
+        if not frase and formato != "original":
+            frase = frase_mais_repetida_chat(mensagens_chat, ini, ini + tam)
         ok, nota = cortar_clipe(job_id, feitos, ini, formato, frase=frase)
         if ok:
             feitos += 1
