@@ -4122,8 +4122,10 @@ def _grafo_webcam(canal, idx, frase=None):
     else:                                       # webcam à esquerda
         x = "min(iw-%s,max((iw-%s)/2,iw*%.4f))" % (larg, larg, cx + cw)
     jogo = "crop=w='%s':h=ih:x='%s':y=0,scale=%d:%d" % (larg, x, LV_W, LV_JOGO)
-    banda = ("scale=16:16,scale=%d:%d,drawbox=x=0:y=0:w=%d:h=%d:color=%s:t=fill,%s"
-             % (LV_W, LV_BANDA, LV_W, LV_BANDA, COR_BANDA, _filtros_faixa(canal, idx, frase)))
+    # Faixa em degradê horizontal: verde do aplicativo à esquerda até preto à direita.
+    banda = ("scale=16:16,geq=r='88*(1-X/W)':g='232*(1-X/W)':b='121*(1-X/W)',"
+             "scale=%d:%d,%s"
+             % (LV_W, LV_BANDA, _filtros_faixa(canal, idx, frase)))
     return (
         "[0:v]fps=30,split=3[s1][s2][s3];"
         "[s1]%s[cam];[s2]%s[banda];[s3]%s[jogo];"
