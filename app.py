@@ -4128,7 +4128,7 @@ def _grafo_webcam(canal, idx, frase=None):
         "[s1]%s[cam];[s2]%s[banda];[s3]%s[jogo];"
         "[cam][banda][jogo]vstack=inputs=3[emp];"
         "movie='%s',format=rgba[wm];"
-        "[emp][wm]overlay=W-w-16:16,format=yuv420p"
+        "[emp][wm]overlay=W-w-16:16,setsar=1,format=yuv420p[outv]"
     ) % (cam, banda, jogo, _esc_filtro(MARCA_PNG))
 
 
@@ -4136,36 +4136,43 @@ _preparar_layout_webcam()
 
 
 def args_formato(formato, leve=False, canal=None, idx=0, frase=None):
-    """Argumentos de vídeo do ffmpeg. 'original' só copia; os verticais reencodam em 9:16 a 30 fps.
-    leve=True: 540x960, preset ultrafast e 1 thread (plano B quando o servidor não aguenta)."""
+    """Argumentos de saída. Os formatos verticais geram MP4 H.264/AAC em 9:16."""
     formato = formato_efetivo(formato, canal)
     if formato == "vertical_webcam" and not leve:
         return ["-filter_complex", _grafo_webcam(canal, idx, frase),
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-                "-threads", str(THREADS_FFMPEG), "-filter_threads", "1", "-filter_complex_threads", "1"]
-    if formato == "vertical_webcam":     # plano B (ffmpeg sem memória): vertical desfocado em qualidade reduzida
+                "-map", "[outv]", "-map", "0:a:0?",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-r", "30", "-vsync", "cfr",
+                "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+                "-max_muxing_queue_size", "1024", "-movflags", "+faststart",
+                "-threads", str(THREADS_FFMPEG), "-filter_threads", "1",
+                "-filter_complex_threads", "1", "-f", "mp4"]
+    if formato == "vertical_webcam":
+        # Plano B quando a composição com webcam não cabe na memória.
         formato = "vertical_blur"
     if formato != "vertical_blur":
         return ["-c", "copy"]
+
     w, h = (540, 960) if leve else (VERT_W, VERT_H)
     threads = 1 if leve else THREADS_FFMPEG
-    codec = ["-c:v", "libx264", "-preset", "ultrafast" if leve else "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
-             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-             "-threads", str(threads), "-filter_threads", "1", "-filter_complex_threads", "1"]
-    if formato == "vertical_blur":
-        pw, ph = w // 5, h // 5  # o fundo é desfocado em miniatura e depois ampliado: muito mais leve
-        filtro = (
-            "fps=30,split=2[fundo][frente];"
-            "[fundo]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=4:1,"
-            "scale=%d:%d:flags=bilinear[bg];"
-            "[frente]scale=%d:-2[fg];"
-            "[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,"
-            "drawbox=x=0:y=(h-%d)/2:w=w:h=%d:color=%s:t=fill,%s,format=yuv420p"
-        ) % (pw, ph, pw, ph, w, h, w, LV_BANDA, LV_BANDA, COR_BANDA,
-             _filtros_faixa(canal, idx, frase))
-        return ["-filter_complex", filtro, *codec]
-    return ["-c", "copy"]
+    pw, ph = w // 5, h // 5
+    filtro = (
+        "fps=30,split=2[fundo][frente];"
+        "[fundo]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=4:1,"
+        "scale=%d:%d:flags=bilinear[bg];"
+        "[frente]scale=%d:-2[fg];"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1,"
+        "drawbox=x=0:y=(h-%d)/2:w=w:h=%d:color=%s:t=fill,%s,"
+        "setsar=1,format=yuv420p[outv]"
+    ) % (pw, ph, pw, ph, w, h, w, LV_BANDA, LV_BANDA, COR_BANDA,
+         _filtros_faixa(canal, idx, frase))
+    return ["-filter_complex", filtro, "-map", "[outv]", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "ultrafast" if leve else "veryfast",
+            "-crf", "25" if leve else "23", "-pix_fmt", "yuv420p",
+            "-r", "30", "-vsync", "cfr", "-c:a", "aac", "-b:a", "128k",
+            "-ar", "48000", "-max_muxing_queue_size", "1024",
+            "-movflags", "+faststart", "-threads", str(threads),
+            "-filter_threads", "1", "-filter_complex_threads", "1", "-f", "mp4"]
 
 
 def converter_vertical(entrada, saida, formato, canal=None, idx=0):
