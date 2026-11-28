@@ -44,6 +44,7 @@ import os
 import re
 import secrets
 import shutil
+import shlex
 import subprocess
 import tempfile
 import textwrap
@@ -4186,15 +4187,25 @@ def converter_vertical(entrada, saida, formato, canal=None, idx=0):
         try:
             with VAGAS_VERTICAL:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             _remover_arquivo(saida)
-            erro = "demorou demais (mais de 15 min)"
+            log_bruto = exc.stderr or ""
+            if isinstance(log_bruto, bytes):
+                log_bruto = log_bruto.decode("utf-8", "replace")
+            erro = "demorou demais (mais de 15 min)\nLog FFmpeg: " + str(log_bruto)[-5000:]
             continue
         if r.returncode == 0 and clipe_valido(saida):
             return True, ""
         _remover_arquivo(saida)
-        erro = resumo_erro(r.stderr, r.returncode) or "o arquivo convertido saiu corrompido"
-    return False, erro + "\n(tentei também em qualidade reduzida)"
+        # Guarda o diagnóstico original completo: a mensagem resumida escondia
+        # frequentemente a linha do x264 que explica o parâmetro inválido.
+        stderr = (r.stderr or "").strip()
+        resumo = resumo_erro(stderr, r.returncode) or "o arquivo convertido saiu corrompido"
+        comando = " ".join(shlex.quote(str(x)) for x in cmd)
+        erro = (resumo + "\nModo: " + ("reduzido" if leve else "normal")
+                + "\nComando FFmpeg: " + comando[-2500:]
+                + "\nLog FFmpeg (final):\n" + stderr[-7000:])
+    return False, erro + "\nA conversão foi tentada em qualidade normal e reduzida."
 
 
 # sem "file": o ffmpeg só precisa de rede aqui (um m3u8 malicioso não consegue ler arquivos do servidor)
