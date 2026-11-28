@@ -4140,9 +4140,9 @@ def _grafo_webcam(canal, idx, frase=None):
     else:                                       # webcam à esquerda
         x = "min(iw-%s,max((iw-%s)/2,iw*%.4f))" % (larg, larg, cx + cw)
     jogo = "crop=w='%s':h=ih:x='%s':y=0,scale=%d:%d" % (larg, x, LV_W, LV_JOGO)
-    banda = ("scale=16:16,scale=%d:%d,%s,%s"
-             % (LV_W, LV_BANDA, _degrade_faixa(0, LV_BANDA, LV_W),
-                _filtros_faixa(canal, idx, frase)))
+    banda = ",".join(parte for parte in (
+        "scale=16:16", "scale=%d:%d" % (LV_W, LV_BANDA),
+        _degrade_faixa(0, LV_BANDA, LV_W), _filtros_faixa(canal, idx, frase)) if parte)
     return (
         "[0:v]fps=30,split=3[s1][s2][s3];"
         "[s1]%s[cam];[s2]%s[banda];[s3]%s[jogo];"
@@ -4179,9 +4179,11 @@ def args_formato(formato, leve=False, canal=None, idx=0, frase=None):
     # A faixa verde com a frase só entra se este ffmpeg tiver o filtro drawtext; sem ele o vertical sai sem texto
     # (em vez de falhar). Dentro do drawbox, "w"/"h" são do próprio retângulo, por isso usamos iw/ih.
     if TEM_DRAWTEXT:
-        faixa = (",%s,%s"
-                 % (_degrade_faixa((h - LV_BANDA) // 2, LV_BANDA, w, 48),
-                    _filtros_faixa(canal, idx, frase, y0=(h - LV_BANDA) // 2, largura=int(w * 0.9))))
+        faixa = "".join(
+            "," + parte for parte in (
+                _degrade_faixa((h - LV_BANDA) // 2, LV_BANDA, w, 48),
+                _filtros_faixa(canal, idx, frase, y0=(h - LV_BANDA) // 2, largura=int(w * 0.9)),
+            ) if parte)  # sem frase (ex.: live ao vivo) não deixa vírgula sobrando
     else:
         faixa = ""
     filtro = (
