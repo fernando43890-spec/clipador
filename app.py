@@ -44,7 +44,6 @@ import os
 import re
 import secrets
 import shutil
-import shlex
 import subprocess
 import tempfile
 import textwrap
@@ -4093,16 +4092,17 @@ def _texto_faixa(canal, idx, frase=None):
     return "MENSAGEM DO CHAT", ""
 
 
-def _filtros_faixa(canal, idx, frase=None):
-    """Desenha a frase real do chat em até duas linhas, centralizada na faixa verde."""
+def _filtros_faixa(canal, idx, frase=None, y0=0, largura=650):
+    """Desenha a frase real do chat em até duas linhas, centralizada na faixa verde.
+    y0 = onde a faixa começa no quadro (0 no layout com webcam; no desfocado a faixa fica no meio)."""
     titulo, gancho = _texto_faixa(canal, idx, frase)
     for tam in (42, 36, 30, 26):
-        linhas = textwrap.wrap(titulo, max(8, int(650 / (0.70 * tam)))) or [titulo]
+        linhas = textwrap.wrap(titulo, max(8, int(largura / (0.70 * tam)))) or [titulo]
         if len(linhas) <= 2:
             break
     linhas = linhas[:2]
     alt_titulo = len(linhas) * tam * 1.2
-    topo = max(6, (LV_BANDA - alt_titulo) / 2)
+    topo = y0 + max(6, (LV_BANDA - alt_titulo) / 2)
     fonte = _esc_filtro(FONTE_TITULO)
     comuns = "fontfile='%s':expansion=none:x=(w-text_w)/2" % fonte
     filtros = []
@@ -4157,16 +4157,23 @@ def args_formato(formato, leve=False, canal=None, idx=0, frase=None):
     w, h = (540, 960) if leve else (VERT_W, VERT_H)
     threads = 1 if leve else THREADS_FFMPEG
     pw, ph = w // 5, h // 5
+    # A faixa verde com a frase só entra se este ffmpeg tiver o filtro drawtext; sem ele o vertical sai sem texto
+    # (em vez de falhar). Dentro do drawbox, "w"/"h" são do próprio retângulo, por isso usamos iw/ih.
+    if TEM_DRAWTEXT:
+        faixa = (",drawbox=x=0:y=(ih-%d)/2:w=iw:h=%d:color=%s:t=fill,%s"
+                 % (LV_BANDA, LV_BANDA, COR_BANDA,
+                    _filtros_faixa(canal, idx, frase, y0=(h - LV_BANDA) // 2, largura=int(w * 0.9))))
+    else:
+        faixa = ""
     filtro = (
         "fps=30,split=2[fundo][frente];"
         "[fundo]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=4:1,"
         "scale=%d:%d:flags=bilinear[bg];"
         "[frente]scale=%d:-2[fg];"
-        "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1,"
-        "drawbox=x=0:y=(h-%d)/2:w=w:h=%d:color=%s:t=fill,%s,"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1"
+        "%s,"
         "setsar=1,format=yuv420p[outv]"
-    ) % (pw, ph, pw, ph, w, h, w, LV_BANDA, LV_BANDA, COR_BANDA,
-         _filtros_faixa(canal, idx, frase))
+    ) % (pw, ph, pw, ph, w, h, w, faixa)
     return ["-filter_complex", filtro, "-map", "[outv]", "-map", "0:a:0?",
             "-c:v", "libx264", "-preset", "ultrafast" if leve else "veryfast",
             "-crf", "25" if leve else "23", "-pix_fmt", "yuv420p",
@@ -4187,25 +4194,15 @@ def converter_vertical(entrada, saida, formato, canal=None, idx=0):
         try:
             with VAGAS_VERTICAL:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
             _remover_arquivo(saida)
-            log_bruto = exc.stderr or ""
-            if isinstance(log_bruto, bytes):
-                log_bruto = log_bruto.decode("utf-8", "replace")
-            erro = "demorou demais (mais de 15 min)\nLog FFmpeg: " + str(log_bruto)[-5000:]
+            erro = "demorou demais (mais de 15 min)"
             continue
         if r.returncode == 0 and clipe_valido(saida):
             return True, ""
         _remover_arquivo(saida)
-        # Guarda o diagnóstico original completo: a mensagem resumida escondia
-        # frequentemente a linha do x264 que explica o parâmetro inválido.
-        stderr = (r.stderr or "").strip()
-        resumo = resumo_erro(stderr, r.returncode) or "o arquivo convertido saiu corrompido"
-        comando = " ".join(shlex.quote(str(x)) for x in cmd)
-        erro = (resumo + "\nModo: " + ("reduzido" if leve else "normal")
-                + "\nComando FFmpeg: " + comando[-2500:]
-                + "\nLog FFmpeg (final):\n" + stderr[-7000:])
-    return False, erro + "\nA conversão foi tentada em qualidade normal e reduzida."
+        erro = resumo_erro(r.stderr, r.returncode) or "o arquivo convertido saiu corrompido"
+    return False, erro + "\n(tentei também em qualidade reduzida)"
 
 
 # sem "file": o ffmpeg só precisa de rede aqui (um m3u8 malicioso não consegue ler arquivos do servidor)
