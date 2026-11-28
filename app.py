@@ -35,6 +35,7 @@ Variáveis novas de segurança:
 """
 import base64
 import contextlib
+import difflib
 import functools
 import hashlib
 import json
@@ -3398,6 +3399,7 @@ LV_W, LV_H = 720, 1280
 LV_CAM, LV_BANDA = 400, 150
 LV_JOGO = LV_H - LV_CAM - LV_BANDA
 COR_BANDA = "0x58E879"  # verde principal do site
+COR_BANDA_ESCURO = "0x07130B"  # preto esverdeado para o degradê
 
 # Fonte Poppins Bold (SIL Open Font License 1.1), reduzida às letras latinas, e a marca do site em círculo.
 _FONTE_B64 = (
@@ -4086,16 +4088,31 @@ def _esc_filtro(txt):
 
 
 def _texto_faixa(canal, idx, frase=None):
-    # A legenda principal vem do chat do intervalo do clipe; não inventa chamadas genéricas.
-    if frase:
-        return str(frase).strip()[:100], ""
-    return "MENSAGEM DO CHAT", ""
+    # Nunca mostra um rótulo genérico: sem frase válida, a faixa fica apenas visual.
+    texto = re.sub(r"\s+", " ", str(frase or "")).strip()
+    if not texto or texto.upper() in ("MENSAGEM DO CHAT", "SEM MENSAGENS NO CHAT"):
+        return "", ""
+    return texto[:100], ""
+
+
+def _filtro_degrade(largura, altura):
+    """Cria um degradê horizontal verde -> preto esverdeado usando faixas FFmpeg."""
+    partes = []
+    passos = 32
+    for i in range(passos):
+        f = i / max(1, passos - 1)
+        rgb = tuple(round(a + (b - a) * f) for a, b in zip((88, 232, 121), (7, 19, 11)))
+        x0, x1 = (largura * i) // passos, (largura * (i + 1)) // passos
+        partes.append("drawbox=x=%d:y=0:w=%d:h=%d:color=0x%02X%02X%02X:t=fill" %
+                      (x0, max(1, x1-x0), altura, *rgb))
+    return ",".join(partes)
 
 
 def _filtros_faixa(canal, idx, frase=None, y0=0, largura=650):
-    """Desenha a frase real do chat em até duas linhas, centralizada na faixa verde.
-    y0 = onde a faixa começa no quadro (0 no layout com webcam; no desfocado a faixa fica no meio)."""
-    titulo, gancho = _texto_faixa(canal, idx, frase)
+    """Desenha somente uma frase real, centralizada na faixa."""
+    titulo, _ = _texto_faixa(canal, idx, frase)
+    if not titulo:
+        return ""
     for tam in (42, 36, 30, 26):
         linhas = textwrap.wrap(titulo, max(8, int(largura / (0.70 * tam)))) or [titulo]
         if len(linhas) <= 2:
@@ -4122,10 +4139,9 @@ def _grafo_webcam(canal, idx, frase=None):
     else:                                       # webcam à esquerda
         x = "min(iw-%s,max((iw-%s)/2,iw*%.4f))" % (larg, larg, cx + cw)
     jogo = "crop=w='%s':h=ih:x='%s':y=0,scale=%d:%d" % (larg, x, LV_W, LV_JOGO)
-    # Faixa em degradê horizontal: verde do aplicativo à esquerda até preto à direita.
-    banda = ("scale=16:16,geq=r='88*(1-X/W)':g='232*(1-X/W)':b='121*(1-X/W)',"
-             "scale=%d:%d,%s"
-             % (LV_W, LV_BANDA, _filtros_faixa(canal, idx, frase)))
+    banda = ("scale=16:16,scale=%d:%d,%s,%s"
+             % (LV_W, LV_BANDA, _filtro_degrade(LV_W, LV_BANDA),
+                _filtros_faixa(canal, idx, frase)))
     return (
         "[0:v]fps=30,split=3[s1][s2][s3];"
         "[s1]%s[cam];[s2]%s[banda];[s3]%s[jogo];"
@@ -4162,9 +4178,17 @@ def args_formato(formato, leve=False, canal=None, idx=0, frase=None):
     # A faixa verde com a frase só entra se este ffmpeg tiver o filtro drawtext; sem ele o vertical sai sem texto
     # (em vez de falhar). Dentro do drawbox, "w"/"h" são do próprio retângulo, por isso usamos iw/ih.
     if TEM_DRAWTEXT:
-        faixa = (",drawbox=x=0:y=(ih-%d)/2:w=iw:h=%d:color=%s:t=fill,%s"
-                 % (LV_BANDA, LV_BANDA, COR_BANDA,
-                    _filtros_faixa(canal, idx, frase, y0=(h - LV_BANDA) // 2, largura=int(w * 0.9))))
+        gradiente = []
+        for i in range(32):
+            f = i / 31
+            rgb = tuple(round(a + (b - a) * f) for a, b in zip((88, 232, 121), (7, 19, 11)))
+            x0, x1 = (w * i) // 32, (w * (i + 1)) // 32
+            gradiente.append("drawbox=x=%d:y=(ih-%d)/2:w=%d:h=%d:color=0x%02X%02X%02X:t=fill" %
+                             (x0, LV_BANDA, max(1, x1-x0), LV_BANDA, *rgb))
+        faixa = "," + ",".join(gradiente)
+        texto_faixa = _filtros_faixa(canal, idx, frase, y0=(h - LV_BANDA) // 2, largura=int(w * 0.9))
+        if texto_faixa:
+            faixa += "," + texto_faixa
     else:
         faixa = ""
     filtro = (
@@ -4531,9 +4555,18 @@ def baixar_chat_vod_amostrado(canal_slug, inicio_epoch, duracao_s, progresso=Non
 
 
 
+def _normalizar_reacao_chat(texto):
+    """Normaliza caixa, pontuação e letras repetidas para agrupar reações."""
+    t = str(texto or "").strip().lower()
+    t = re.sub(r"https?://\S+", "", t, flags=re.I)
+    t = re.sub(r"(.)\1{2,}", r"\1\1", t, flags=re.UNICODE)
+    t = re.sub(r"[^\wÀ-ÿ]+", " ", t, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def frase_mais_repetida_chat(mensagens, inicio, fim):
-    """Escolhe a mensagem mais repetida dentro do intervalo do clipe."""
-    grupos = {}
+    """Agrupa mensagens iguais ou muito parecidas e retorna a reação dominante."""
+    grupos = []
     for m in mensagens or []:
         try:
             t = float(m.get("t", -1))
@@ -4542,22 +4575,32 @@ def frase_mais_repetida_chat(mensagens, inicio, fim):
         if not (inicio <= t <= fim):
             continue
         original = re.sub(r"\s+", " ", str(m.get("texto") or "")).strip()
-        # Evita exibir links, mensagens vazias e spam de um único caractere.
-        limpo = re.sub(r"https?://\S+", "", original, flags=re.I).strip()
-        chave = re.sub(r"[^\wÀ-ÿ]+", " ", limpo.lower(), flags=re.UNICODE).strip()
-        if len(chave) < 3:
+        chave = _normalizar_reacao_chat(original)
+        if len(chave) < 2 or len(chave) > 140:
             continue
-        if chave not in grupos:
-            grupos[chave] = {"qtd": 0, "texto": limpo}
-        grupos[chave]["qtd"] += 1
+        if chave in ("kk", "kkkk", "rs", "haha", "hahaha", "lol"):
+            chave = "risada"
+        grupo = None
+        for g in grupos:
+            if chave == g["chave"] or difflib.SequenceMatcher(None, chave, g["chave"]).ratio() >= 0.82:
+                grupo = g
+                break
+        if grupo is None:
+            grupos.append({"chave": chave, "qtd": 1, "texto": original})
+        else:
+            grupo["qtd"] += 1
+            if len(original) > len(grupo["texto"]) and len(original) <= 100:
+                grupo["texto"] = original
     if not grupos:
-        return "SEM MENSAGENS NO CHAT"
-    # Mais repetida primeiro; em empate, prefere uma frase que comunique algo.
-    melhor = max(grupos.values(), key=lambda g: (g["qtd"], min(len(g["texto"]), 90)))
-    frase = melhor["texto"]
+        return ""
+    melhor = max(grupos, key=lambda g: (g["qtd"], min(len(g["texto"]), 90)))
+    frase = melhor["texto"].strip()
+    if melhor["chave"] == "risada":
+        frase = "KKKK"
     if len(frase) > 100:
         frase = frase[:97].rsplit(" ", 1)[0] + "..."
     return frase.upper()
+
 
 def achar_picos(tempos, duracao_s, quantidade, tamanho_clipe):
     """Janela deslizante de 30s; pega os maiores picos sem sobrepor.
