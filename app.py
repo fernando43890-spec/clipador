@@ -4190,8 +4190,8 @@ def args_formato(formato, leve=False, canal=None, idx=0, frase=None):
         "scale=%d:%d:flags=bilinear[bg];"
         "[frente]scale=%d:-2[fg];"
         "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1"
-        "%s,"
-        "setsar=1,format=yuv420p[outv]"
+        "%s"
+        ",setsar=1,format=yuv420p[outv]"
     ) % (pw, ph, pw, ph, w, h, w, faixa)
     return ["-filter_complex", filtro, "-map", "[outv]", "-map", "0:a:0?",
             "-c:v", "libx264", "-preset", "ultrafast" if leve else "veryfast",
